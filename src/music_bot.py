@@ -41,13 +41,16 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """
-        Runs once when the bot starts. Connects to Wavelink node and loads extensions.
+        Runs once when the bot starts. Connects to Lavalink node and loads extensions.
         """
+        ssl_enabled = os.getenv("SSL_ENABLED", "false").lower() == "true"
+        protocol = "wss://" if ssl_enabled else "ws://"
+
         await wavelink.Pool.connect(
             nodes=[
                 wavelink.Node(
-                    uri=os.getenv("WAVELINK_NODE_URI"),
-                    password=os.getenv("WAVELINK_NODE_PASSWORD"),
+                    uri=f"{protocol}{os.getenv('LAVALINK_HOST')}:{os.getenv('LAVALINK_PORT')}",
+                    password=os.getenv("LAVALINK_PASSWORD"),
                 )
             ],
             client=self,
@@ -78,6 +81,8 @@ class Bot(commands.Bot):
         embed.add_field(name="Duration", value=duration, inline=True)
         if track.artwork:
             embed.set_image(url=track.artwork)
+        else:
+            embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
         if self.latest_action:
             embed.set_footer(text=self.latest_action["text"])
             self.latest_action = None
@@ -128,6 +133,13 @@ class Bot(commands.Bot):
             if not player.playing:
                 await player.play(
                     player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                )
+
+            if not player.queue.is_empty:
+                await self.update_setup_embed(
+                    guild=player.guild,
+                    player=player,
+                    view=PlayerControlView(self, player),
                 )
             return "Playback started."
         except Exception as e:

@@ -7,6 +7,8 @@ import discord
 import wavelink
 from discord.ext import commands
 
+from cogs.buttons import ControlButton, PlayerControlView
+
 if TYPE_CHECKING:
     from music_bot import Bot
 
@@ -82,7 +84,18 @@ class EventHandlers(commands.Cog):
                     channel = self.bot.get_channel(setup_data.get("channel"))
                     message = await channel.fetch_message(setup_data.get("message"))
                     embed = self.bot.create_default_embed()
-                    await message.edit(embed=embed)
+                    await message.edit(
+                        embed=embed,
+                        view=PlayerControlView(
+                            self.bot,
+                            player,
+                            disabled_buttons=[
+                                ControlButton.SKIP,
+                                ControlButton.SHUFFLE,
+                                ControlButton.PAUSE_RESUME,
+                            ],
+                        ),
+                    )
                 except Exception as e:
                     logging.error("Error updating embed on track end: %s", e)
 
