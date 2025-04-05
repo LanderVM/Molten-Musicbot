@@ -83,10 +83,9 @@ class EventHandlers(commands.Cog):
             if setup_data:
                 try:
                     await self.bot.update_setup_embed(player.guild, player, embed=self.bot.create_default_embed(), view=PlayerControlView(
-                        self,
+                        self.bot,
                         player,
                         disabled_buttons=[
-                            ControlButton.LEAVE,
                             ControlButton.PAUSE_RESUME,
                             ControlButton.SKIP,
                             ControlButton.SHUFFLE,
