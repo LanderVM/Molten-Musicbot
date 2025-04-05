@@ -48,12 +48,16 @@ class PlayerControlView(View):
                 child.disabled = True
             elif child.custom_id == ControlButton.PAUSE_RESUME.value:
                 child.emoji = "▶️" if self.player.paused else "⏸️"
+            elif (
+                self.player.queue.is_empty
+                and child.custom_id == ControlButton.SHUFFLE.value
+            ):
+                child.disabled = True
 
             # Apply manual disables
             if child.custom_id in disabled_ids:
                 child.disabled = True
 
-    # Button definitions remain the same as before...
     @button(emoji="⏹️", custom_id=ControlButton.LEAVE.value)
     async def leave_button(self, interaction: Interaction, button: Button):
         await self.bot.handle_disconnect_action(

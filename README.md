@@ -62,13 +62,15 @@ To run the bot, you’ll need a Discord bot token. Follow these steps to get you
 Open the `.env` file in a text editor and add your Discord bot token. The file should look something like this:
 
 ```env
-DISCORD_TOKEN=your_discord_bot_token_here
-LAVALINK_HOST=localhost
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+LAVALINK_HOST=127.0.0.1
 LAVALINK_PORT=2333
 LAVALINK_PASSWORD=youshallnotpass
 ```
 
 Replace `your_discord_bot_token_here` with the bot token you obtained in step 5. Make sure to set the Lavalink server details correctly (you’ll need a Lavalink server running).
+
+A free list of Lavalink servers can be found [here](https://lavalink.darrennathanael.com/NoSSL/lavalink-without-ssl/).
 
 ### 7. Run the Bot
 
@@ -86,7 +88,7 @@ If everything is set up correctly, your bot should be online and ready to start 
 
 ### How to Host Lavalink
 
-If you need to set up Lavalink, you can follow the official Lavalink setup documentation [here](https://lavalink.dev/getting-started/#installation).
+If you need to set up Lavalink, you can follow the official Lavalink setup documentation [here](https://lavalink.dev/getting-started).
 
 ### Troubleshooting
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -8,10 +9,14 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from cogs.buttons import ControlButton, PlayerControlView
-from utils import format_duration, load_setup_channels, save_setup_channels
+from utils import (
+    format_duration,
+    load_setup_channels,
+    remove_setup_channel,
+    save_setup_channels,
+)
 
 load_dotenv()
-
 
 class Bot(commands.Bot):
     def __init__(self) -> None:
@@ -28,6 +33,7 @@ class Bot(commands.Bot):
         self.setup_channels = load_setup_channels()
         self.latest_action: dict | None = None
         self.delete_message_tags: set[int] = set()
+        self.setup_message_cache: dict[int, discord.Message] = {}
 
     def set_latest_action(self, action: str, persist: bool = False):
         """
@@ -41,13 +47,16 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """
-        Runs once when the bot starts. Connects to Wavelink node and loads extensions.
+        Runs once when the bot starts. Connects to Lavalink node and loads extensions.
         """
+        ssl_enabled = os.getenv("SSL_ENABLED", "false").lower() == "true"
+        protocol = "wss://" if ssl_enabled else "ws://"
+
         await wavelink.Pool.connect(
             nodes=[
                 wavelink.Node(
-                    uri=os.getenv("WAVELINK_NODE_URI"),
-                    password=os.getenv("WAVELINK_NODE_PASSWORD"),
+                    uri=f"{protocol}{os.getenv('LAVALINK_HOST')}:{os.getenv('LAVALINK_PORT')}",
+                    password=os.getenv("LAVALINK_PASSWORD"),
                 )
             ],
             client=self,
@@ -56,6 +65,47 @@ class Bot(commands.Bot):
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
         await self.tree.sync()
+
+    async def load_setup_message_cache(self) -> None:
+        """
+        Loads and caches the setup messages for each guild from the stored setup_channels.
+        If the setup channel isn't found or an error occurs while fetching the message,
+        the guild's entry is removed from both the in-memory setup_channels and the local file.
+        """
+        guild_count = len(self.setup_channels)
+        delay = 0.02 if guild_count > 50 else 0
+
+        for guild_id, data in list(self.setup_channels.items()):
+            channel_id = data.get("channel")
+            message_id = data.get("message")
+            guild = self.get_guild(guild_id)
+            if not guild:
+                logging.error(
+                    f"Guild {guild_id} not found. Removing from setup_channels."
+                )
+                remove_setup_channel(guild_id, self.setup_channels)
+                continue
+
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                logging.error(
+                    f"Channel {channel_id} not found in guild {guild_id}. Removing from setup_channels."
+                )
+                remove_setup_channel(guild_id, self.setup_channels)
+                continue
+
+            try:
+                msg = await channel.fetch_message(message_id)
+                self.setup_message_cache[guild_id] = msg
+                logging.info(f"Cached setup message for guild {guild_id}.")
+            except Exception as e:
+                logging.error(
+                    f"Error fetching setup message for guild {guild_id}: {e}. Removing from setup_channels."
+                )
+                remove_setup_channel(guild_id, self.setup_channels)
+
+            if delay:
+                await asyncio.sleep(delay)
 
     def create_now_playing_embed(
         self, track: wavelink.Playable, original: wavelink.Playable | None
@@ -78,6 +128,8 @@ class Bot(commands.Bot):
         embed.add_field(name="Duration", value=duration, inline=True)
         if track.artwork:
             embed.set_image(url=track.artwork)
+        else:
+            embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
         if self.latest_action:
             embed.set_footer(text=self.latest_action["text"])
             self.latest_action = None
@@ -128,6 +180,13 @@ class Bot(commands.Bot):
             if not player.playing:
                 await player.play(
                     player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                )
+
+            if not player.queue.is_empty:
+                await self.update_setup_embed(
+                    guild=player.guild,
+                    player=player,
+                    view=PlayerControlView(self, player),
                 )
             return "Playback started."
         except Exception as e:
@@ -237,15 +296,7 @@ class Bot(commands.Bot):
             return "Failed to disconnect the player."
 
         self.set_latest_action(f"Disconnected by {user.display_name}")
-        setup_data = self.setup_channels.get(guild.id)
-        if setup_data:
-            try:
-                channel = guild.get_channel(setup_data.get("channel"))
-                message = await channel.fetch_message(setup_data.get("message"))
-                embed = self.create_default_embed()
-                await message.edit(
-                    embed=embed,
-                    view=PlayerControlView(
+        await self.update_setup_embed(guild, player, embed=self.create_default_embed(), view=PlayerControlView(
                         self,
                         player,
                         disabled_buttons=[
@@ -253,12 +304,8 @@ class Bot(commands.Bot):
                             ControlButton.PAUSE_RESUME,
                             ControlButton.SKIP,
                             ControlButton.SHUFFLE,
-                        ],
-                    ),
-                )
-            except Exception as e:
-                logging.error(f"Error updating embed on disconnect: {e}")
-                return "Disconnected, but failed to update embed."
+                        ]))
+        
         return "Disconnected the player."
 
     async def handle_shuffle_action(
@@ -320,13 +367,16 @@ class Bot(commands.Bot):
         player: wavelink.Player | None,
         view: discord.ui.View = None,
         embed: discord.Embed = None,
-    ):
+    ) -> None:
         """
-        Updates the embed and view in the setup channel.
+        Updates the embed and view in the setup channel using the cached setup message.
+        This avoids duplicate API calls by referencing the cached message.
 
-        This method gets the channel and message based on stored setup data,
-        fetches or creates an embed, updates (or replaces) the message, and
-        then saves the new message ID.
+        Parameters:
+            guild (discord.Guild): The guild where the update should occur.
+            player (wavelink.Player | None): The player instance (if available).
+            view (discord.ui.View, optional): The view to attach to the message. Defaults to PlayerControlView.
+            embed (discord.Embed, optional): An optional embed to use instead of fetching one.
         """
         setup_data = self.setup_channels.get(guild.id)
         if not setup_data:
@@ -341,11 +391,9 @@ class Bot(commands.Bot):
 
         embed = await self._fetch_or_create_embed(channel, message_id, embed)
         view = view or PlayerControlView(self, player)
-
         new_message_id, edited, original_message = (
             await self._update_or_replace_message(channel, message_id, embed, view)
         )
-
         self.setup_channels[guild.id]["message"] = new_message_id
         save_setup_channels(self.setup_channels)
 
@@ -365,21 +413,26 @@ class Bot(commands.Bot):
         self, channel: discord.TextChannel, message_id: int, embed: discord.Embed = None
     ) -> discord.Embed:
         """
-        Attempts to fetch an existing message and retrieve its embed.
-        If not available, returns a default embed.
+        Attempts to retrieve the embed from a cached message.
+        If not available, fetches the message, caches it, and returns its embed.
+        If the message has no embed or an error occurs, returns a default embed.
         """
-        try:
-            message = await channel.fetch_message(message_id)
-            if embed is None:
-                embed = (
-                    message.embeds[0] if message.embeds else self.create_default_embed()
-                )
-            if self.latest_action:
-                embed.set_footer(text=self.latest_action["text"])
-            return embed
-        except Exception as e:
-            logging.error("Error fetching embed: %s", e)
-            return self.create_default_embed()
+        guild_id = channel.guild.id
+        message = self.setup_message_cache.get(guild_id)
+        if message is None:
+            try:
+                message = await channel.fetch_message(message_id)
+                self.setup_message_cache[guild_id] = message
+                logging.info("Fetched and cached message for guild %s.", guild_id)
+            except Exception as e:
+                logging.error("Error fetching embed for guild %s: %s", guild_id, e)
+                return self.create_default_embed()
+
+        if embed is None:
+            embed = message.embeds[0] if message.embeds else self.create_default_embed()
+        if self.latest_action:
+            embed.set_footer(text=self.latest_action["text"])
+        return embed
 
     async def _update_or_replace_message(
         self,
@@ -389,26 +442,33 @@ class Bot(commands.Bot):
         view: discord.ui.View,
     ) -> tuple[int, bool, discord.Message | None]:
         """
-        Updates the message if possible; if it’s flagged for deletion or not found,
-        sends a new message instead.
+        Updates the cached message if possible; if it’s flagged for deletion or not found,
+        sends a new message instead and updates the cache accordingly.
 
         Returns:
-            new_message_id, a boolean indicating if the original message was edited,
-            and the original message (or new message) object.
+            new_message_id (int): The ID of the updated or new message.
+            edited (bool): True if the original message was successfully edited.
+            message (discord.Message | None): The updated (or new) message object.
         """
+        guild_id = channel.guild.id
+        message = self.setup_message_cache.get(guild_id)
         try:
-            message = await channel.fetch_message(message_id)
-            # If flagged for deletion, delete it and send a new one.
+            if message is None:
+                message = await channel.fetch_message(message_id)
             if message_id in self.delete_message_tags:
                 await message.delete()
                 self.delete_message_tags.discard(message_id)
                 new_message = await channel.send(embed=embed, view=view)
+                self.setup_message_cache[guild_id] = new_message
                 return new_message.id, False, new_message
             else:
                 await message.edit(embed=embed, view=view)
-                return message_id, True, message
+                new_message = await channel.fetch_message(message_id)
+                self.setup_message_cache[guild_id] = new_message
+                return message_id, True, new_message
         except discord.NotFound:
             new_message = await channel.send(embed=embed, view=view)
+            self.setup_message_cache[guild_id] = new_message
             return new_message.id, False, new_message
         except Exception as e:
             logging.error("Error updating setup message: %s", e)

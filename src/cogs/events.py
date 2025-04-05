@@ -7,6 +7,8 @@ import discord
 import wavelink
 from discord.ext import commands
 
+from cogs.buttons import ControlButton, PlayerControlView
+
 if TYPE_CHECKING:
     from music_bot import Bot
 
@@ -31,6 +33,7 @@ class EventHandlers(commands.Cog):
             type=discord.ActivityType.listening, name="your requests ♫"
         )
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
+        await self.bot.load_setup_message_cache()
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
@@ -79,10 +82,15 @@ class EventHandlers(commands.Cog):
             setup_data = self.bot.setup_channels.get(player.guild.id, {})
             if setup_data:
                 try:
-                    channel = self.bot.get_channel(setup_data.get("channel"))
-                    message = await channel.fetch_message(setup_data.get("message"))
-                    embed = self.bot.create_default_embed()
-                    await message.edit(embed=embed)
+                    await self.bot.update_setup_embed(player.guild, player, embed=self.bot.create_default_embed(), view=PlayerControlView(
+                        self,
+                        player,
+                        disabled_buttons=[
+                            ControlButton.LEAVE,
+                            ControlButton.PAUSE_RESUME,
+                            ControlButton.SKIP,
+                            ControlButton.SHUFFLE,
+                        ]))
                 except Exception as e:
                     logging.error("Error updating embed on track end: %s", e)
 
