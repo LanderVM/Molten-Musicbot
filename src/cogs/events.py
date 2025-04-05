@@ -33,6 +33,7 @@ class EventHandlers(commands.Cog):
             type=discord.ActivityType.listening, name="your requests ♫"
         )
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
+        await self.bot.load_setup_message_cache()
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):

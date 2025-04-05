@@ -42,6 +42,20 @@ def save_setup_channels(data: dict) -> None:
         logging.error(f"Failed to save setup channels: {e}")
 
 
+def remove_setup_channel(guild_id: int, data: dict) -> None:
+    """
+    Removes the setup channel entry for the given guild ID from the provided data dictionary
+    and saves the updated data to the JSON file.
+
+    Args:
+        guild_id (int): The guild ID to remove.
+        data (dict): The current setup channels dictionary.
+    """
+    if guild_id in data:
+        del data[guild_id]
+        save_setup_channels(data)
+
+
 def format_duration(ms: int) -> str:
     """
     Converts milliseconds to a formatted time string.
