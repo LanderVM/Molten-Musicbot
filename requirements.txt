@@ -1,0 +1,6 @@
+discord.py>=2.5.0
+wavelink>=3.4.0
+python-dotenv>=1.1.0
+ruff>=0.11.0
+isort>=6.0.0
+black>=25.1.0
