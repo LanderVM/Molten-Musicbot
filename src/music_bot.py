@@ -18,6 +18,7 @@ from utils import (
 
 load_dotenv()
 
+
 class Bot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
@@ -296,16 +297,22 @@ class Bot(commands.Bot):
             return "Failed to disconnect the player."
 
         self.set_latest_action(f"Disconnected by {user.display_name}")
-        await self.update_setup_embed(guild, player, embed=self.create_default_embed(), view=PlayerControlView(
-                        self,
-                        player,
-                        disabled_buttons=[
-                            ControlButton.LEAVE,
-                            ControlButton.PAUSE_RESUME,
-                            ControlButton.SKIP,
-                            ControlButton.SHUFFLE,
-                        ]))
-        
+        await self.update_setup_embed(
+            guild,
+            player,
+            embed=self.create_default_embed(),
+            view=PlayerControlView(
+                self,
+                player,
+                disabled_buttons=[
+                    ControlButton.LEAVE,
+                    ControlButton.PAUSE_RESUME,
+                    ControlButton.SKIP,
+                    ControlButton.SHUFFLE,
+                ],
+            ),
+        )
+
         return "Disconnected the player."
 
     async def handle_shuffle_action(

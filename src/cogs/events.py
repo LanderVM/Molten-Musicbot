@@ -82,14 +82,20 @@ class EventHandlers(commands.Cog):
             setup_data = self.bot.setup_channels.get(player.guild.id, {})
             if setup_data:
                 try:
-                    await self.bot.update_setup_embed(player.guild, player, embed=self.bot.create_default_embed(), view=PlayerControlView(
-                        self.bot,
+                    await self.bot.update_setup_embed(
+                        player.guild,
                         player,
-                        disabled_buttons=[
-                            ControlButton.PAUSE_RESUME,
-                            ControlButton.SKIP,
-                            ControlButton.SHUFFLE,
-                        ]))
+                        embed=self.bot.create_default_embed(),
+                        view=PlayerControlView(
+                            self.bot,
+                            player,
+                            disabled_buttons=[
+                                ControlButton.PAUSE_RESUME,
+                                ControlButton.SKIP,
+                                ControlButton.SHUFFLE,
+                            ],
+                        ),
+                    )
                 except Exception as e:
                     logging.error("Error updating embed on track end: %s", e)
 
