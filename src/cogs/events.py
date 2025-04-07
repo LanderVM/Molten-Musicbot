@@ -96,6 +96,7 @@ class EventHandlers(commands.Cog):
                             ],
                         ),
                     )
+
                 except Exception as e:
                     logging.error("Error updating embed on track end: %s", e)
 

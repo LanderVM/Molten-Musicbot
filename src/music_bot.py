@@ -18,7 +18,6 @@ from utils import (
 
 load_dotenv()
 
-
 class Bot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
