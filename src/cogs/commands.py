@@ -183,6 +183,8 @@ Once the channel is created, you can:
 - Use the `/toggle` command to pause or resume the song.
 - Use the `/shuffle` command to shuffle the current queue.
 - Use the `/nightcore` command to toggle the Nightcore effect on or off.
+- Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
+- Use the `/remove_dj` command to remove the DJ role and make the channel public.
 - Use the `/disconnect` command to disconnect the player and stop playback.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
