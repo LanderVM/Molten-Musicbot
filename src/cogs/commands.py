@@ -7,8 +7,7 @@ import wavelink
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.buttons import PlayerControlView
-from utils import save_setup_channels
+from enums import SetupChannelKeys
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -40,62 +39,34 @@ class MusicCommands(commands.Cog):
             raise error
 
     def dj_role_required(interaction: discord.Interaction) -> bool:
+        """
+        Checks if the user has the DJ role required for music commands.
+        Uses the DJ role stored in the setup_channels via its ID.
+        If no DJ role is stored for the guild, the command is allowed.
+        """
         guild = interaction.guild
         if guild is None:
-            return True  # Allow in DMs, or you can raise an error if needed.
-        # Look for a role named "DJ"
-        dj_role = discord.utils.get(guild.roles, name="DJ")
-        if dj_role is None:
             return True
-        if dj_role in interaction.user.roles:
+
+        bot: Bot = interaction.client
+        setup_data = bot.setup_channels.get(guild.id)
+        dj_role = None
+        if setup_data and SetupChannelKeys.DJ_ROLE in setup_data:
+            dj_role = guild.get_role(setup_data[SetupChannelKeys.DJ_ROLE])
+
+        if dj_role is None or dj_role in interaction.user.roles:
             return True
-        raise app_commands.MissingPermissions(["DJ role"])
+
+        raise app_commands.MissingPermissions([SetupChannelKeys.DJ_ROLE_NAME])
 
     @app_commands.command(
         name="setup",
         description="Create a dedicated music request channel with persistent player status.",
     )
-    @app_commands.checks.has_permissions(manage_channels=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def setup_create(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            return await interaction.response.send_message(
-                "This command can only be used in a guild.", ephemeral=True
-            )
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(
-                send_messages=True,
-                read_messages=True,
-                manage_messages=False,
-                embed_links=False,
-            ),
-            guild.me: discord.PermissionOverwrite(
-                send_messages=True, manage_messages=True, read_message_history=True
-            ),
-        }
-
-        try:
-            channel = await guild.create_text_channel(
-                name="🎵music-requests", overwrites=overwrites
-            )
-            embed = self.bot.create_default_embed()
-            view = PlayerControlView(self.bot, None)
-            status_message = await channel.send(embed=embed, view=view)
-
-            self.bot.setup_channels[guild.id] = {
-                "channel": channel.id,
-                "message": status_message.id,
-            }
-            save_setup_channels(self.bot.setup_channels)
-
-            await interaction.response.send_message(
-                f"Music channel created: {channel.mention}"
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                "I need permissions to manage channels!", ephemeral=True
-            )
+        msg = await self.bot.create_setup_channel(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(name="play", description="Play a song with the given query.")
     @app_commands.check(dj_role_required)
@@ -168,6 +139,24 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(
+        name="create_dj",
+        description="Create a DJ role to restrict music channel access and command usage.",
+    )
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def create_dj(self, interaction: discord.Interaction):
+        msg = await self.bot.create_dj_role(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+
+    @app_commands.command(
+        name="remove_dj",
+        description="Remove the DJ role and make the music channel public.",
+    )
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def remove_dj(self, interaction: discord.Interaction):
+        msg = await self.bot.remove_dj_role(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+
+    @app_commands.command(
         name="help",
         description="Get information on how to set up the music bot and usage instructions.",
     )
@@ -192,100 +181,6 @@ The bot will automatically manage the player and display the current song status
 Happy listening! 🎶
         """
         await interaction.response.send_message(help_message, ephemeral=True)
-
-    @app_commands.command(
-        name="create_dj",
-        description="Create a DJ role to restrict music channel access and command usage.",
-    )
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def create_dj(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            return await interaction.response.send_message(
-                "This command can only be used in a guild.", ephemeral=True
-            )
-
-        dj_role = discord.utils.get(guild.roles, name="DJ")
-        if dj_role:
-            return await interaction.response.send_message(
-                "A DJ role already exists.", ephemeral=True
-            )
-
-        try:
-            dj_role = await guild.create_role(
-                name="DJ", mentionable=True, reason="DJ role created via command."
-            )
-        except discord.Forbidden:
-            return await interaction.response.send_message(
-                "I do not have permission to create roles.", ephemeral=True
-            )
-
-        setup_data = self.bot.setup_channels.get(guild.id)
-        if setup_data:
-            channel = guild.get_channel(setup_data.get("channel"))
-            if channel:
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    dj_role: discord.PermissionOverwrite(view_channel=True),
-                    guild.me: discord.PermissionOverwrite(view_channel=True),
-                }
-                try:
-                    await channel.edit(overwrites=overwrites)
-                except Exception as e:
-                    return await interaction.response.send_message(
-                        f"DJ role created, but updating channel permissions failed: {e}",
-                        ephemeral=True,
-                    )
-
-        await interaction.response.send_message(
-            f"DJ role created successfully: {dj_role.mention}", ephemeral=True
-        )
-
-    @app_commands.command(
-        name="remove_dj",
-        description="Remove the DJ role and make the music channel public.",
-    )
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def remove_dj(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            return await interaction.response.send_message(
-                "This command can only be used in a guild.", ephemeral=True
-            )
-
-        dj_role = discord.utils.get(guild.roles, name="DJ")
-        if not dj_role:
-            return await interaction.response.send_message(
-                "DJ role does not exist.", ephemeral=True
-            )
-
-        try:
-            await dj_role.delete(reason="DJ role removed via command.")
-        except discord.Forbidden:
-            return await interaction.response.send_message(
-                "I do not have permission to delete roles.", ephemeral=True
-            )
-
-        setup_data = self.bot.setup_channels.get(guild.id)
-        if setup_data:
-            channel = guild.get_channel(setup_data.get("channel"))
-            if channel:
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(view_channel=True),
-                    guild.me: discord.PermissionOverwrite(view_channel=True),
-                }
-                try:
-                    await channel.edit(overwrites=overwrites)
-                except Exception as e:
-                    return await interaction.response.send_message(
-                        f"DJ role removed, but updating channel permissions failed: {e}",
-                        ephemeral=True,
-                    )
-
-        await interaction.response.send_message(
-            "DJ role removed. The music channel is now public for everyone.",
-            ephemeral=True,
-        )
 
 
 async def setup(bot: commands.Bot):

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, List, Optional
 import wavelink
 from discord import Interaction
 from discord.ui import Button, View, button
-import logging
 
 if TYPE_CHECKING:
     from music_bot import Bot
