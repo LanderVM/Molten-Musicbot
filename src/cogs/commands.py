@@ -7,8 +7,7 @@ import wavelink
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.buttons import PlayerControlView
-from utils import save_setup_channels
+from enums import SetupChannelKeys
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -23,53 +22,54 @@ class MusicCommands(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot: Bot = bot
 
+    async def cog_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
+        if isinstance(error, app_commands.MissingPermissions):
+            missing = ", ".join(error.missing_permissions)
+            await interaction.response.send_message(
+                f"🚫 You need the `{missing}` permission(s) to use this command.",
+                ephemeral=True,
+                delete_after=5,
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ An error occurred while running the command.", ephemeral=True
+            )
+            raise error
+
+    def dj_role_required(interaction: discord.Interaction) -> bool:
+        """
+        Checks if the user has the DJ role required for music commands.
+        Uses the DJ role stored in the setup_channels via its ID.
+        If no DJ role is stored for the guild, the command is allowed.
+        """
+        guild = interaction.guild
+        if guild is None:
+            return True
+
+        bot: Bot = interaction.client
+        setup_data = bot.setup_channels.get(guild.id)
+        dj_role = None
+        if setup_data and SetupChannelKeys.DJ_ROLE in setup_data:
+            dj_role = guild.get_role(setup_data[SetupChannelKeys.DJ_ROLE])
+
+        if dj_role is None or dj_role in interaction.user.roles:
+            return True
+
+        raise app_commands.MissingPermissions([SetupChannelKeys.DJ_ROLE_NAME])
+
     @app_commands.command(
         name="setup",
         description="Create a dedicated music request channel with persistent player status.",
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setup_create(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            return await interaction.response.send_message(
-                "This command can only be used in a guild.", ephemeral=True
-            )
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(
-                send_messages=True,
-                read_messages=True,
-                manage_messages=False,
-                embed_links=False,
-            ),
-            guild.me: discord.PermissionOverwrite(
-                send_messages=True, manage_messages=True, read_message_history=True
-            ),
-        }
-
-        try:
-            channel = await guild.create_text_channel(
-                name="🎵music-requests", overwrites=overwrites
-            )
-            embed = self.bot.create_default_embed()
-            view = PlayerControlView(self.bot, None)
-            status_message = await channel.send(embed=embed, view=view)
-
-            self.bot.setup_channels[guild.id] = {
-                "channel": channel.id,
-                "message": status_message.id,
-            }
-            save_setup_channels(self.bot.setup_channels)
-
-            await interaction.response.send_message(
-                f"Music channel created: {channel.mention}"
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                "I need permissions to manage channels!", ephemeral=True
-            )
+        msg = await self.bot.create_setup_channel(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(name="play", description="Play a song with the given query.")
+    @app_commands.check(dj_role_required)
     async def play(self, interaction: discord.Interaction, query: str):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_play_action(
@@ -78,6 +78,7 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(name="skip", description="Skip the current song.")
+    @app_commands.check(dj_role_required)
     async def skip(self, interaction: discord.Interaction):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_skip_action(
@@ -88,6 +89,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(
         name="toggle", description="Toggle pause/resume of the current song."
     )
+    @app_commands.check(dj_role_required)
     async def pause_resume(self, interaction: discord.Interaction):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_toggle_action(
@@ -96,6 +98,7 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(name="disconnect", description="Disconnect the player.")
+    @app_commands.check(dj_role_required)
     async def disconnect(self, interaction: discord.Interaction):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_disconnect_action(
@@ -106,6 +109,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(
         name="shuffle", description="Shuffle the current queue of songs."
     )
+    @app_commands.check(dj_role_required)
     async def shuffle(self, interaction: discord.Interaction):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_shuffle_action(
@@ -117,6 +121,7 @@ class MusicCommands(commands.Cog):
         name="nightcore",
         description="Toggle the Nightcore effect (timescale) on or off.",
     )
+    @app_commands.check(dj_role_required)
     @app_commands.describe(mode="Toggle Nightcore effect")
     @app_commands.choices(
         mode=[
@@ -134,6 +139,24 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(
+        name="create_dj",
+        description="Create a DJ role to restrict music channel access and command usage.",
+    )
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def create_dj(self, interaction: discord.Interaction):
+        msg = await self.bot.create_dj_role(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+
+    @app_commands.command(
+        name="remove_dj",
+        description="Remove the DJ role and make the music channel public.",
+    )
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def remove_dj(self, interaction: discord.Interaction):
+        msg = await self.bot.remove_dj_role(interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+
+    @app_commands.command(
         name="help",
         description="Get information on how to set up the music bot and usage instructions.",
     )
@@ -149,6 +172,8 @@ Once the channel is created, you can:
 - Use the `/toggle` command to pause or resume the song.
 - Use the `/shuffle` command to shuffle the current queue.
 - Use the `/nightcore` command to toggle the Nightcore effect on or off.
+- Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
+- Use the `/remove_dj` command to remove the DJ role and make the channel public.
 - Use the `/disconnect` command to disconnect the player and stop playback.
 
 The bot will automatically manage the player and display the current song status in the setup channel.

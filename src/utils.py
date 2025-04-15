@@ -1,10 +1,6 @@
 import json
 import logging
 import os
-from typing import Any, cast
-
-import discord
-import wavelink
 
 SETUP_CHANNELS_FILE = "setup_channels.json"
 
@@ -72,18 +68,3 @@ def format_duration(ms: int) -> str:
     if hours > 0:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes}:{seconds:02d}"
-
-
-def ensure_player(interaction: discord.Interaction) -> Any:
-    """
-    Checks for an existing voice client for the guild.
-    If not present, attempts to connect using the interaction user's voice channel.
-
-    Args:
-        interaction: The interaction invoking the command.
-
-    Returns:
-        The Wavelink player instance or None if connection fails.
-    """
-    player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
-    return player

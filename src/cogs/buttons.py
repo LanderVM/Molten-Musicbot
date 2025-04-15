@@ -49,7 +49,7 @@ class PlayerControlView(View):
             elif child.custom_id == ControlButton.PAUSE_RESUME.value:
                 child.emoji = "▶️" if self.player.paused else "⏸️"
             elif (
-                self.player.queue.is_empty
+                self.player.queue.count <= 1
                 and child.custom_id == ControlButton.SHUFFLE.value
             ):
                 child.disabled = True
