@@ -152,22 +152,32 @@ class Bot(commands.Bot):
             embed = self.create_default_embed()
             view = PlayerControlView(self, None)
             status_message = await channel.send(embed=embed, view=view)
-            self.update_setup_dictionary(guild.id, channel.id, status_message.id)
+            data = self.setup_channels.get(guild.id, {})
+            data[SetupChannelKeys.CHANNEL] = channel.id
+            data[SetupChannelKeys.MESSAGE] = status_message.id
+            self.setup_channels[guild.id] = data
+            save_setup_channels(self.setup_channels)
             self.setup_message_cache[guild.id] = status_message
+
+            dj_role = self.dj_roles.get(guild.id)
+            if dj_role:
+                await channel.set_permissions(
+                    guild.default_role,
+                    overwrite=discord.PermissionOverwrite(view_channel=False),
+                )
+
+                dj_overwrites = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_messages=True,
+                    embed_links=True,
+                )
+                await channel.set_permissions(dj_role, overwrite=dj_overwrites)
+                logging.info(f"Updated permissions for existing DJ role in guild {guild.id}.")
 
             return f"Music channel created: {channel.mention}"
         except discord.Forbidden:
             return "I need permissions to manage channels!"
-
-    def update_setup_dictionary(
-        self, guild_id: int, channel_id: int, message_id: int
-    ) -> None:
-        """
-        Updates the setup_channels dictionary for a given guild and
-        saves the changes to persistent storage.
-        """
-        self.setup_channels[guild_id] = {"channel": channel_id, "message": message_id}
-        save_setup_channels(self.setup_channels)
 
     def create_now_playing_embed(
         self, track: wavelink.Playable, original: wavelink.Playable | None
