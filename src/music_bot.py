@@ -55,7 +55,7 @@ class Bot(commands.Bot):
         """
         Runs once when the bot starts. Connects to Lavalink node and loads extensions.
         """
-        ssl_enabled = os.getenv("SSL_ENABLED", "false").lower() == "true"
+        ssl_enabled = os.getenv(EnvironmentKeys.SSL_ENABLED, "false").lower() == "true"
         protocol = "wss://" if ssl_enabled else "ws://"
 
         await wavelink.Pool.connect(
@@ -204,7 +204,7 @@ class Bot(commands.Bot):
         if track.artwork:
             embed.set_image(url=track.artwork)
         else:
-            embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
+            embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
         if self.latest_action:
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
             self.latest_action = None
