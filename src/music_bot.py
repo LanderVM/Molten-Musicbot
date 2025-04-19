@@ -9,7 +9,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from cogs.buttons import ControlButton, PlayerControlView
-from enums import LatestActionKeys, SetupChannelKeys
+from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
     format_duration,
     load_setup_channels,
@@ -61,8 +61,8 @@ class Bot(commands.Bot):
         await wavelink.Pool.connect(
             nodes=[
                 wavelink.Node(
-                    uri=f"{protocol}{os.getenv('LAVALINK_HOST')}:{os.getenv('LAVALINK_PORT')}",
-                    password=os.getenv("LAVALINK_PASSWORD"),
+                    uri=f"{protocol}{os.getenv(EnvironmentKeys.LAVALINK_HOST)}:{os.getenv(EnvironmentKeys.LAVALINK_PORT)}",
+                    password=os.getenv(EnvironmentKeys.LAVALINK_PASSWORD),
                 )
             ],
             client=self,
@@ -173,7 +173,9 @@ class Bot(commands.Bot):
                     embed_links=True,
                 )
                 await channel.set_permissions(dj_role, overwrite=dj_overwrites)
-                logging.info(f"Updated permissions for existing DJ role in guild {guild.id}.")
+                logging.info(
+                    f"Updated permissions for existing DJ role in guild {guild.id}."
+                )
 
             return f"Music channel created: {channel.mention}"
         except discord.Forbidden:
@@ -186,7 +188,8 @@ class Bot(commands.Bot):
             title=track.title, url=track.uri, color=discord.Color.blue()
         )
         embed.set_author(
-            name="Now Playing", icon_url=os.getenv("NOW_PLAYING_SPIN_GIF_URL")
+            name="Now Playing",
+            icon_url=os.getenv(EnvironmentKeys.NOW_PLAYING_SPIN_GIF_URL),
         )
         requester = getattr(track, "requester", None) or getattr(
             original, "requester", None
@@ -211,7 +214,7 @@ class Bot(commands.Bot):
         embed = discord.Embed(
             title="Now Playing", description="No song currently playing"
         )
-        embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
+        embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
         if self.latest_action:
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
         return embed
@@ -342,7 +345,8 @@ class Bot(commands.Bot):
 
             if not player.playing:
                 await player.play(
-                    player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                    player.queue.get(),
+                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
                 )
 
             if not player.queue.is_empty:
@@ -397,7 +401,8 @@ class Bot(commands.Bot):
 
             if not player.playing:
                 await player.play(
-                    player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                    player.queue.get(),
+                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
                 )
             return msg
         except Exception as e:
@@ -544,7 +549,6 @@ class Bot(commands.Bot):
         if not setup_data:
             return
 
-        # Use enum keys instead of raw strings
         channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
         message_id = setup_data.get(SetupChannelKeys.MESSAGE)
         channel = guild.get_channel(channel_id)
