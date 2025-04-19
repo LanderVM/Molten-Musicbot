@@ -350,11 +350,9 @@ class Bot(commands.Bot):
                 )
 
             if not player.queue.is_empty:
-                await self.update_setup_embed(
-                    guild=player.guild,
-                    player=player,
-                    view=PlayerControlView(self, player),
-                )
+                view = PlayerControlView(self, player)
+                await self.update_setup_buttons(player.guild, view)
+
             return "Playback started."
         except Exception as e:
             logging.error(f"Playback error: {e}")
@@ -640,3 +638,42 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error("Error updating setup message: %s", e)
             return message_id, False, None
+
+#TODO: duplicate code with handle_play_action, consider refactoring
+    async def update_setup_buttons(
+        self,
+        guild: discord.Guild,
+        view: discord.ui.View,
+    ) -> None:
+        """
+        Fetches the cached setup message for the guild and edits it
+        with the new View (buttons) only.
+        """
+        setup_data = self.setup_channels.get(guild.id)
+        if not setup_data:
+            return
+
+        channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
+        message_id = setup_data.get(SetupChannelKeys.MESSAGE)
+
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            logging.error(f"Channel {channel_id} not found in guild {guild.id}")
+            return
+
+        msg = self.setup_message_cache.get(guild.id)
+        if msg is None or msg.id != message_id:
+            try:
+                msg = await channel.fetch_message(message_id)
+                self.setup_message_cache[guild.id] = msg
+            except Exception as e:
+                logging.error(f"Could not fetch setup message {message_id}: {e}")
+                return
+
+        try:
+            await msg.edit(view=view)
+            self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
+        except Exception as e:
+            logging.error(f"Failed to update buttons on setup message: {e}")
+            
+#TODO: the handle_play_action & handle_setup_play method is called when the user sends a message in the music request channel, and the events.py on_wavelink_track_start & on_message both are doing stuff together.
