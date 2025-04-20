@@ -84,8 +84,7 @@ If everything is set up correctly, your bot should be online and ready to start 
 
 In your Discord server, you can use the following commands to control the bot:
 
-- `/setup` to create a new song request channel. In the song request channel you can just type any message or url and the will find the song and play it.
-
+- `/setup` to create a new song request channel. In the song request channel you can just type any message or url and the bot will find the song and play it.
 ## Additional Information
 
 ### Troubleshooting
