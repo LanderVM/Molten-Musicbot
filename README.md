@@ -68,7 +68,7 @@ LAVALINK_PASSWORD=youshallnotpass
 
 Replace `your_discord_bot_token_here` with the bot token you obtained in step 5. Make sure to set the Lavalink server details correctly.
 
-### 7. Run the Bot
+### 6. Run the Bot
 
 Finally, run the bot using the following command:
 
@@ -80,7 +80,7 @@ If everything is set up correctly, your bot should be online and ready to start 
 
 ---
 
-### 8. Usage
+### 7. Usage
 
 In your Discord server, you can use the following commands to control the bot:
 

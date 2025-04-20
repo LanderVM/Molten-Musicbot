@@ -1,4 +1,4 @@
-# This Dockerfile sets up a Python application using Flask and Redis (if included in your requirements).
+# This Dockerfile sets up a Python application.
 # Note: This image alone won't allow connections to a Lavalink server running on your *host* machine via 'localhost'.
 #       If you're using a local Lavalink server, either run it in the same Docker network (via Docker Compose),
 #       or use the host machine's IP address instead of 'localhost' in your bot's config.
