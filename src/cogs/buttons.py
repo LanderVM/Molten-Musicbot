@@ -31,7 +31,7 @@ class PlayerControlView(View):
         player: Optional[wavelink.Player],
         disabled_buttons: List[ControlButton] = None,
         *,
-        timeout: float = 180,
+        timeout: float = None,
     ):
         super().__init__(timeout=timeout)
         self.bot = bot

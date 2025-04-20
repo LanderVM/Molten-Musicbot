@@ -9,7 +9,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from cogs.buttons import ControlButton, PlayerControlView
-from enums import LatestActionKeys, SetupChannelKeys
+from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
     format_duration,
     load_setup_channels,
@@ -55,14 +55,14 @@ class Bot(commands.Bot):
         """
         Runs once when the bot starts. Connects to Lavalink node and loads extensions.
         """
-        ssl_enabled = os.getenv("SSL_ENABLED", "false").lower() == "true"
+        ssl_enabled = os.getenv(EnvironmentKeys.SSL_ENABLED, "false").lower() == "true"
         protocol = "wss://" if ssl_enabled else "ws://"
 
         await wavelink.Pool.connect(
             nodes=[
                 wavelink.Node(
-                    uri=f"{protocol}{os.getenv('LAVALINK_HOST')}:{os.getenv('LAVALINK_PORT')}",
-                    password=os.getenv("LAVALINK_PASSWORD"),
+                    uri=f"{protocol}{os.getenv(EnvironmentKeys.LAVALINK_HOST)}:{os.getenv(EnvironmentKeys.LAVALINK_PORT)}",
+                    password=os.getenv(EnvironmentKeys.LAVALINK_PASSWORD),
                 )
             ],
             client=self,
@@ -173,7 +173,9 @@ class Bot(commands.Bot):
                     embed_links=True,
                 )
                 await channel.set_permissions(dj_role, overwrite=dj_overwrites)
-                logging.info(f"Updated permissions for existing DJ role in guild {guild.id}.")
+                logging.info(
+                    f"Updated permissions for existing DJ role in guild {guild.id}."
+                )
 
             return f"Music channel created: {channel.mention}"
         except discord.Forbidden:
@@ -186,7 +188,8 @@ class Bot(commands.Bot):
             title=track.title, url=track.uri, color=discord.Color.blue()
         )
         embed.set_author(
-            name="Now Playing", icon_url=os.getenv("NOW_PLAYING_SPIN_GIF_URL")
+            name="Now Playing",
+            icon_url=os.getenv(EnvironmentKeys.NOW_PLAYING_SPIN_GIF_URL),
         )
         requester = getattr(track, "requester", None) or getattr(
             original, "requester", None
@@ -201,7 +204,7 @@ class Bot(commands.Bot):
         if track.artwork:
             embed.set_image(url=track.artwork)
         else:
-            embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
+            embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
         if self.latest_action:
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
             self.latest_action = None
@@ -211,7 +214,7 @@ class Bot(commands.Bot):
         embed = discord.Embed(
             title="Now Playing", description="No song currently playing"
         )
-        embed.set_image(url=os.getenv("NO_SONG_PLAYING_IMAGE_URL"))
+        embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
         if self.latest_action:
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
         return embed
@@ -342,15 +345,14 @@ class Bot(commands.Bot):
 
             if not player.playing:
                 await player.play(
-                    player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                    player.queue.get(),
+                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
                 )
 
             if not player.queue.is_empty:
-                await self.update_setup_embed(
-                    guild=player.guild,
-                    player=player,
-                    view=PlayerControlView(self, player),
-                )
+                view = PlayerControlView(self, player)
+                await self.update_setup_buttons(player.guild, view)
+
             return "Playback started."
         except Exception as e:
             logging.error(f"Playback error: {e}")
@@ -397,7 +399,8 @@ class Bot(commands.Bot):
 
             if not player.playing:
                 await player.play(
-                    player.queue.get(), volume=int(os.getenv("BOT_VOLUME"))
+                    player.queue.get(),
+                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
                 )
             return msg
         except Exception as e:
@@ -544,7 +547,6 @@ class Bot(commands.Bot):
         if not setup_data:
             return
 
-        # Use enum keys instead of raw strings
         channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
         message_id = setup_data.get(SetupChannelKeys.MESSAGE)
         channel = guild.get_channel(channel_id)
@@ -636,3 +638,39 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error("Error updating setup message: %s", e)
             return message_id, False, None
+
+    async def update_setup_buttons(
+        self,
+        guild: discord.Guild,
+        view: discord.ui.View,
+    ) -> None:
+        """
+        Fetches the cached setup message for the guild and edits it
+        with the new View (buttons) only.
+        """
+        setup_data = self.setup_channels.get(guild.id)
+        if not setup_data:
+            return
+
+        channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
+        message_id = setup_data.get(SetupChannelKeys.MESSAGE)
+
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            logging.error(f"Channel {channel_id} not found in guild {guild.id}")
+            return
+
+        msg = self.setup_message_cache.get(guild.id)
+        if msg is None or msg.id != message_id:
+            try:
+                msg = await channel.fetch_message(message_id)
+                self.setup_message_cache[guild.id] = msg
+            except Exception as e:
+                logging.error(f"Could not fetch setup message {message_id}: {e}")
+                return
+
+        try:
+            await msg.edit(view=view)
+            self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
+        except Exception as e:
+            logging.error(f"Failed to update buttons on setup message: {e}")
