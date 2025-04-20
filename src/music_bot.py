@@ -639,7 +639,6 @@ class Bot(commands.Bot):
             logging.error("Error updating setup message: %s", e)
             return message_id, False, None
 
-#TODO: duplicate code with handle_play_action, consider refactoring
     async def update_setup_buttons(
         self,
         guild: discord.Guild,
@@ -675,5 +674,3 @@ class Bot(commands.Bot):
             self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
         except Exception as e:
             logging.error(f"Failed to update buttons on setup message: {e}")
-            
-#TODO: the handle_play_action & handle_setup_play method is called when the user sends a message in the music request channel, and the events.py on_wavelink_track_start & on_message both are doing stuff together.
