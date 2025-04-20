@@ -52,8 +52,7 @@ To run the bot, you’ll need a Discord bot token. Follow these steps to get you
    - **Message Content Intent**
 5. Save the changes.
 6. In the Installation section, make sure to add the bot to your server with the following settings and use the Install Link to invite the bot to your server:
-![DiscordInstallation](https://github.com/user-attachments/assets/5f1dd3f6-e8a4-45dc-8dfe-e25a3615f9b1)
-
+   ![DiscordInstallation](https://github.com/user-attachments/assets/5f1dd3f6-e8a4-45dc-8dfe-e25a3615f9b1)
 
 ### 5. Edit `.env` File
 
@@ -85,6 +84,9 @@ If everything is set up correctly, your bot should be online and ready to start 
 In your Discord server, you can use the following commands to control the bot:
 
 - `/setup` to create a new song request channel. In the song request channel you can just type any message or url and the bot will find the song and play it.
+
+- `/help` to get a list of available commands.
+
 ## Additional Information
 
 ### Troubleshooting
