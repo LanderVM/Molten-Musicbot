@@ -65,7 +65,7 @@ LAVALINK_PORT=2333
 LAVALINK_PASSWORD=youshallnotpass
 ```
 
-Replace `your_discord_bot_token_here` with the bot token you obtained in step 5. Make sure to set the Lavalink server details correctly.
+Replace `your_discord_bot_token_here` with the bot token you obtained in step 4. Make sure to set the Lavalink server details correctly.
 
 ### 6. Run the Bot
 
