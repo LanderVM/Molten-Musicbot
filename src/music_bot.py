@@ -219,6 +219,25 @@ class Bot(commands.Bot):
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
         return embed
 
+    async def _voice_precheck(
+        self,
+        user: discord.abc.Snowflake,
+        guild: discord.Guild,
+    ) -> str | None:
+        """
+        Return an error message if the user is not in a voice channel
+        or is not in the same one as the bot. Otherwise None.
+        """
+        member = guild.get_member(user.id)  # type: ignore
+        if not member or not member.voice or not member.voice.channel:
+            return "🚫 You must join a voice channel first."
+
+        vc = guild.voice_client
+        if vc and vc.channel != member.voice.channel:
+            return f"🚫 You must be in the same voice channel as the bot ({vc.channel.mention})."
+
+        return None
+    
     async def create_dj_role(self, guild: discord.Guild) -> str:
         """
         Creates a DJ role for the guild and updates persistent storage and
@@ -315,48 +334,11 @@ class Bot(commands.Bot):
             await message.delete()
         except discord.NotFound:
             return "Message not found; nothing to delete."
-
-        player: wavelink.Player = message.guild.voice_client
-        if not player:
-            if not message.author.voice:
-                return "You must be in a voice channel."
-            try:
-                player = await message.author.voice.channel.connect(cls=wavelink.Player)
-            except Exception as e:
-                logging.error(f"Voice connection failed: {e}")
-                return "Voice connection failed."
-
-        player.autoplay = wavelink.AutoPlayMode.partial
-        player.home = message.channel
-
-        try:
-            tracks = await wavelink.Playable.search(message.content)
-            if not tracks:
-                return "No tracks found with your query."
-
-            if isinstance(tracks, wavelink.Playlist):
-                for track in tracks.tracks:
-                    track.requester = message.author
-                await player.queue.put_wait(tracks)
-            else:
-                track = tracks[0]
-                track.requester = message.author
-                await player.queue.put_wait(track)
-
-            if not player.playing:
-                await player.play(
-                    player.queue.get(),
-                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
-                )
-
-            if not player.queue.is_empty:
-                view = PlayerControlView(self, player)
-                await self.update_setup_buttons(player.guild, view)
-
-            return "Playback started."
-        except Exception as e:
-            logging.error(f"Playback error: {e}")
-            return "Playback error occurred."
+        
+        if err := await self._voice_precheck(message.author, message.guild):
+            return err
+        
+        await self.handle_play_action(message, message.guild, message.author, None, message.content)
 
     async def handle_play_action(
         self,
@@ -366,9 +348,9 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         query: str,
     ) -> str:
+        if err := await self._voice_precheck(user, guild):
+            return err
         if not player:
-            if not user.voice:
-                return "Please join a voice channel first."
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
@@ -414,6 +396,8 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
+        if err := await self._voice_precheck(user, guild):
+            return err
         if not player:
             return "No active player."
         try:
@@ -486,6 +470,8 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
+        if err := await self._voice_precheck(user, guild):
+            return err
         if not player or player.queue.is_empty:
             return "No active player or the queue is empty."
         try:
@@ -505,9 +491,9 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         mode: int,
     ) -> str:
+        if err := await self._voice_precheck(user, guild):
+            return err
         if not player:
-            if not user.voice:
-                return "Please join a voice channel first."
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
