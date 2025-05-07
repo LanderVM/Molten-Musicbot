@@ -420,7 +420,7 @@ class Bot(commands.Bot):
             await player.stop()
 
             # on_wavelink_track_end in events.py updates the embed, no need to do it here
-            
+
             return "Playback stopped and queue cleared."
         except Exception as e:
             logging.error(f"Stop error: {e}")
