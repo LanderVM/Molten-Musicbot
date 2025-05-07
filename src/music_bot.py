@@ -415,26 +415,11 @@ class Bot(commands.Bot):
             return "No active player."
 
         try:
+            self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
             player.queue.clear()
             await player.stop()
 
-            self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
-
-            await self.update_setup_embed(
-                guild,
-                player,
-                embed=self.create_default_embed(),
-                view=PlayerControlView(
-                    self,
-                    player,
-                    disabled_buttons=[
-                        ControlButton.STOP,
-                        ControlButton.PAUSE_RESUME,
-                        ControlButton.SKIP,
-                        ControlButton.SHUFFLE,
-                    ],
-                ),
-            )
+            # on_wavelink_track_end in events.py updates the embed, no need to do it here
             
             return "Playback stopped and queue cleared."
         except Exception as e:
@@ -453,8 +438,8 @@ class Bot(commands.Bot):
         if not player:
             return "No active player."
         try:
-            await player.skip(force=True)
             self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
+            await player.skip(force=True)
             return "Skipped the current track."
         except Exception as e:
             logging.error(f"Skip error: {e}")
@@ -492,12 +477,12 @@ class Bot(commands.Bot):
         if not player:
             return "No active player."
         try:
+            self.set_latest_action(f"Disconnected by {user.display_name}")
             await player.disconnect()
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
             return "Failed to disconnect the player."
 
-        self.set_latest_action(f"Disconnected by {user.display_name}")
         await self.update_setup_embed(
             guild,
             player,
@@ -611,6 +596,7 @@ class Bot(commands.Bot):
             )
         ):
             self.delete_message_tags.add(new_message_id)
+        self.set_latest_action("")
 
     async def _fetch_or_create_embed(
         self, channel: discord.TextChannel, message_id: int, embed: discord.Embed = None
