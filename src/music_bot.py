@@ -220,7 +220,7 @@ class Bot(commands.Bot):
             embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
         return embed
 
-    async def _voice_precheck(
+    async def voice_precheck(
         self,
         user: discord.abc.Snowflake,
         guild: discord.Guild,
@@ -336,7 +336,7 @@ class Bot(commands.Bot):
         except discord.NotFound:
             return "Message not found; nothing to delete."
 
-        if err := await self._voice_precheck(message.author, message.guild):
+        if err := await self.voice_precheck(message.author, message.guild):
             return err
 
         await self.handle_play_action(
@@ -355,7 +355,7 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         query: str,
     ) -> str:
-        if err := await self._voice_precheck(user, guild):
+        if err := await self.voice_precheck(user, guild):
             return err
         if not player:
             try:
@@ -391,10 +391,41 @@ class Bot(commands.Bot):
                     player.queue.get(),
                     volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
                 )
+            if not player.queue.is_empty:
+                view = PlayerControlView(self, player)
+                await self.update_setup_buttons(player.guild, view)
             return msg
         except Exception as e:
             logging.error(f"Playback error: {e}")
             return "Playback error occurred."
+
+    async def handle_stop_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+    ) -> str:
+        """
+        Stops the current track, clears the queue, but stays connected.
+        """
+        if err := await self.voice_precheck(user, guild):
+            return err
+        if not player:
+            return "No active player."
+
+        try:
+            player.queue.clear()
+            await player.stop()
+
+            self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
+
+            # on_wavelink_track_end in events.py updates the embed, no need to do it here
+
+            return "Playback stopped and queue cleared."
+        except Exception as e:
+            logging.error(f"Stop error: {e}")
+            return "Failed to stop playback."
 
     async def handle_skip_action(
         self,
@@ -403,7 +434,7 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self._voice_precheck(user, guild):
+        if err := await self.voice_precheck(user, guild):
             return err
         if not player:
             return "No active player."
@@ -461,7 +492,7 @@ class Bot(commands.Bot):
                 self,
                 player,
                 disabled_buttons=[
-                    ControlButton.LEAVE,
+                    ControlButton.STOP,
                     ControlButton.PAUSE_RESUME,
                     ControlButton.SKIP,
                     ControlButton.SHUFFLE,
@@ -477,7 +508,7 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self._voice_precheck(user, guild):
+        if err := await self.voice_precheck(user, guild):
             return err
         if not player or player.queue.is_empty:
             return "No active player or the queue is empty."
@@ -498,7 +529,7 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         mode: int,
     ) -> str:
-        if err := await self._voice_precheck(user, guild):
+        if err := await self.voice_precheck(user, guild):
             return err
         if not player:
             try:

@@ -90,6 +90,7 @@ class EventHandlers(commands.Cog):
                             self.bot,
                             player,
                             disabled_buttons=[
+                                ControlButton.STOP,
                                 ControlButton.PAUSE_RESUME,
                                 ControlButton.SKIP,
                                 ControlButton.SHUFFLE,

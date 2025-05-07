@@ -77,6 +77,15 @@ class MusicCommands(commands.Cog):
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
+    @app_commands.command(name="stop", description="Stop playback and clear the queue.")
+    @app_commands.check(dj_role_required)
+    async def stop(self, interaction: discord.Interaction):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        msg = await self.bot.handle_stop_action(
+            interaction, interaction.guild, interaction.user, player
+        )
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+
     @app_commands.command(name="skip", description="Skip the current song.")
     @app_commands.check(dj_role_required)
     async def skip(self, interaction: discord.Interaction):
@@ -126,7 +135,7 @@ class MusicCommands(commands.Cog):
     @app_commands.choices(
         mode=[
             app_commands.Choice(name="Off", value=0),
-            app_commands.Choice(name="Nightcore", value=1),
+            app_commands.Choice(name="On", value=1),
         ]
     )
     async def nightcore(
@@ -170,6 +179,7 @@ Once the channel is created, you can:
 - Use the `/play <song name>` command to play a song.
 - Use the `/skip` command to skip the current song.
 - Use the `/toggle` command to pause or resume the song.
+- Use the `/stop` command to stop playback and clear the queue.
 - Use the `/shuffle` command to shuffle the current queue.
 - Use the `/nightcore` command to toggle the Nightcore effect on or off.
 - Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
