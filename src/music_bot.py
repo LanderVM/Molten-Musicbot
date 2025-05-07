@@ -420,8 +420,22 @@ class Bot(commands.Bot):
 
             self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
 
-            # on_wavelink_track_end in events.py updates the embed, no need to do it here
-
+            await self.update_setup_embed(
+                guild,
+                player,
+                embed=self.create_default_embed(),
+                view=PlayerControlView(
+                    self,
+                    player,
+                    disabled_buttons=[
+                        ControlButton.STOP,
+                        ControlButton.PAUSE_RESUME,
+                        ControlButton.SKIP,
+                        ControlButton.SHUFFLE,
+                    ],
+                ),
+            )
+            
             return "Playback stopped and queue cleared."
         except Exception as e:
             logging.error(f"Stop error: {e}")
