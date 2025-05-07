@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timezone
+from typing import cast
 
 import discord
 import wavelink
@@ -237,7 +238,7 @@ class Bot(commands.Bot):
             return f"🚫 You must be in the same voice channel as the bot ({vc.channel.mention})."
 
         return None
-    
+
     async def create_dj_role(self, guild: discord.Guild) -> str:
         """
         Creates a DJ role for the guild and updates persistent storage and
@@ -334,11 +335,17 @@ class Bot(commands.Bot):
             await message.delete()
         except discord.NotFound:
             return "Message not found; nothing to delete."
-        
+
         if err := await self._voice_precheck(message.author, message.guild):
             return err
-        
-        await self.handle_play_action(message, message.guild, message.author, None, message.content)
+
+        await self.handle_play_action(
+            message,
+            message.guild,
+            message.author,
+            cast(wavelink.Player, message.guild.voice_client),
+            message.content,
+        )
 
     async def handle_play_action(
         self,
