@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class ControlButton(Enum):
     """Enum representing available player control buttons"""
 
-    LEAVE = "control_leave"
+    STOP = "control_stop"
     PAUSE_RESUME = "control_pause_resume"
     SKIP = "control_skip"
     SHUFFLE = "control_shuffle"
@@ -58,9 +58,9 @@ class PlayerControlView(View):
             if child.custom_id in disabled_ids:
                 child.disabled = True
 
-    @button(emoji="⏹️", custom_id=ControlButton.LEAVE.value)
-    async def leave_button(self, interaction: Interaction, button: Button):
-        await self.bot.handle_disconnect_action(
+    @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
+    async def stop_button(self, interaction: Interaction, button: Button):
+        await self.bot.handle_stop_action(
             interaction, interaction.guild, interaction.user, self.player
         )
 

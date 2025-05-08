@@ -52,8 +52,7 @@ To run the bot, you’ll need a Discord bot token. Follow these steps to get you
    - **Message Content Intent**
 5. Save the changes.
 6. In the Installation section, make sure to add the bot to your server with the following settings and use the Install Link to invite the bot to your server:
-![DiscordInstallation](https://github.com/user-attachments/assets/5f1dd3f6-e8a4-45dc-8dfe-e25a3615f9b1)
-
+   ![DiscordInstallation](https://github.com/user-attachments/assets/5f1dd3f6-e8a4-45dc-8dfe-e25a3615f9b1)
 
 ### 5. Edit `.env` File
 
@@ -66,9 +65,9 @@ LAVALINK_PORT=2333
 LAVALINK_PASSWORD=youshallnotpass
 ```
 
-Replace `your_discord_bot_token_here` with the bot token you obtained in step 5. Make sure to set the Lavalink server details correctly.
+Replace `your_discord_bot_token_here` with the bot token you obtained in step 4. Make sure to set the Lavalink server details correctly.
 
-### 7. Run the Bot
+### 6. Run the Bot
 
 Finally, run the bot using the following command:
 
@@ -80,11 +79,14 @@ If everything is set up correctly, your bot should be online and ready to start 
 
 ---
 
-### 8. Usage
+### 7. Usage
 
 In your Discord server, you can use the following commands to control the bot:
 
 - `/setup` to create a new song request channel. In the song request channel you can just type any message or url and the bot will find the song and play it.
+
+- `/help` to get a list of available commands.
+
 ## Additional Information
 
 ### Troubleshooting

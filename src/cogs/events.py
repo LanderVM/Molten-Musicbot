@@ -90,6 +90,7 @@ class EventHandlers(commands.Cog):
                             self.bot,
                             player,
                             disabled_buttons=[
+                                ControlButton.STOP,
                                 ControlButton.PAUSE_RESUME,
                                 ControlButton.SKIP,
                                 ControlButton.SHUFFLE,
@@ -127,7 +128,8 @@ class EventHandlers(commands.Cog):
         if message.channel.id != setup_data.get("channel"):
             return
 
-        await self.bot.handle_setup_play(message)
+        if err := await self.bot.handle_setup_play(message):
+            await message.channel.send(err, delete_after=5)
 
 
 async def setup(bot: commands.Bot):
