@@ -26,7 +26,9 @@ class Bot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
-        discord.utils.setup_logging(level=logging.INFO)
+        logging_level = logging.DEBUG if os.getenv(EnvironmentKeys.LOG_LEVEL).lower() == "debug" else logging.INFO 
+        discord.utils.setup_logging(level=logging_level)
+        
         super().__init__(
             command_prefix="!",
             intents=intents,

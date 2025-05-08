@@ -23,6 +23,17 @@ class EventHandlers(commands.Cog):
         self.bot: Bot = bot
 
     @commands.Cog.listener()
+    async def on_connect(self):
+        """
+        Called when the bot is connected to Discord.
+        Sets up the bot's presence and loads the setup message cache.
+        """
+        logging.info("Connecting to Discord...")
+        await self.bot.wait_until_ready()
+        logging.info("Connected to Discord.")
+    
+
+    @commands.Cog.listener()
     async def on_ready(self):
         """
         Called when the bot has connected to Discord.
@@ -32,8 +43,9 @@ class EventHandlers(commands.Cog):
         activity = discord.Activity(
             type=discord.ActivityType.listening, name="your requests ♫"
         )
-        await self.bot.change_presence(status=discord.Status.online, activity=activity)
         await self.bot.load_setup_message_cache()
+        await self.bot.change_presence(status=discord.Status.online, activity=activity)
+        logging.info("Bot is online & can be used ♫")
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
