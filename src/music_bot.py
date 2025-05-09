@@ -9,7 +9,7 @@ import wavelink
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from cogs.buttons import ControlButton, PlayerControlView
+from cogs.buttons import PlayerControlView
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
     format_duration,
@@ -26,9 +26,13 @@ class Bot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
-        logging_level = logging.DEBUG if os.getenv(EnvironmentKeys.LOG_LEVEL).lower() == "debug" else logging.INFO 
+        logging_level = (
+            logging.DEBUG
+            if os.getenv(EnvironmentKeys.LOG_LEVEL).lower() == "debug"
+            else logging.INFO
+        )
         discord.utils.setup_logging(level=logging_level)
-        
+
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -367,10 +371,6 @@ class Bot(commands.Bot):
                 return "Failed to join your voice channel."
 
         player.autoplay = wavelink.AutoPlayMode.partial
-        if not hasattr(player, "home"):
-            player.home = interaction.channel
-        elif player.home != interaction.channel:
-            return f"You can only play songs in {player.home.mention}, as the player has already started there."
 
         try:
             tracks = await wavelink.Playable.search(query)
@@ -419,7 +419,7 @@ class Bot(commands.Bot):
         try:
             self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
             player.queue.clear()
-            await player.stop()
+            await player.skip()
 
             # on_wavelink_track_end in events.py updates the embed, no need to do it here
 
@@ -454,6 +454,8 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
+        if err := await self.voice_precheck(user, guild):
+            return err
         if not player:
             return "No active player."
 
@@ -480,26 +482,14 @@ class Bot(commands.Bot):
             return "No active player."
         try:
             self.set_latest_action(f"Disconnected by {user.display_name}")
+            player.queue.clear()
+            await player.skip()
             await player.disconnect()
+
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
             return "Failed to disconnect the player."
 
-        await self.update_setup_embed(
-            guild,
-            player,
-            embed=self.create_default_embed(),
-            view=PlayerControlView(
-                self,
-                player,
-                disabled_buttons=[
-                    ControlButton.STOP,
-                    ControlButton.PAUSE_RESUME,
-                    ControlButton.SKIP,
-                    ControlButton.SHUFFLE,
-                ],
-            ),
-        )
         return "Disconnected the player."
 
     async def handle_shuffle_action(
