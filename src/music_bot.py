@@ -9,7 +9,7 @@ import wavelink
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from cogs.buttons import PlayerControlView
+from cogs.buttons import ControlButton, PlayerControlView
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
     format_duration,
@@ -482,13 +482,27 @@ class Bot(commands.Bot):
             return "No active player."
         try:
             self.set_latest_action(f"Disconnected by {user.display_name}")
-            player.queue.clear()
-            await player.skip()
             await player.disconnect()
 
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
             return "Failed to disconnect the player."
+        
+        await self.update_setup_embed(
+            guild,
+            player,
+            embed=self.create_default_embed(),
+            view=PlayerControlView(
+                self,
+                player,
+                disabled_buttons=[
+                    ControlButton.STOP,
+                    ControlButton.PAUSE_RESUME,
+                    ControlButton.SKIP,
+                    ControlButton.SHUFFLE,
+                ],
+            ),
+        )
 
         return "Disconnected the player."
 
@@ -643,8 +657,7 @@ class Bot(commands.Bot):
                 self.setup_message_cache[guild_id] = new_message
                 return new_message.id, False, new_message
             else:
-                await message.edit(embed=embed, view=view)
-                new_message = await channel.fetch_message(message_id)
+                new_message = await message.edit(embed=embed, view=view)
                 self.setup_message_cache[guild_id] = new_message
                 return message_id, True, new_message
         except discord.NotFound:
