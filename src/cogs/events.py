@@ -120,9 +120,9 @@ class EventHandlers(commands.Cog):
 
         :param interaction: The interaction instance from Discord.
         """
-        if interaction.type == discord.InteractionType.component:
-            if not interaction.response.is_done():
-                await interaction.response.defer()
+        # if interaction.type == discord.InteractionType.component:
+        #    if not interaction.response.is_done():
+        #        await interaction.response.defer()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

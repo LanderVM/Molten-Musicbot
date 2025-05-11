@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 from cogs.buttons import ControlButton, PlayerControlView
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
+    Error,
+    Success,
     format_duration,
     load_setup_channels,
     remove_setup_channel,
@@ -362,13 +364,13 @@ class Bot(commands.Bot):
         query: str,
     ) -> str:
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
                 logging.error(f"Voice connection failed: {e}")
-                return "Failed to join your voice channel."
+                return Error("Failed to join your voice channel.")
 
         player.autoplay = wavelink.AutoPlayMode.partial
 
@@ -412,9 +414,9 @@ class Bot(commands.Bot):
         Stops the current track, clears the queue, but stays connected.
         """
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player:
-            return "No active player."
+            return Error("No active player.")
 
         try:
             self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
@@ -423,10 +425,10 @@ class Bot(commands.Bot):
 
             # on_wavelink_track_end in events.py updates the embed, no need to do it here
 
-            return "Playback stopped and queue cleared."
+            return Success("Playback stopped and queue cleared.")
         except Exception as e:
             logging.error(f"Stop error: {e}")
-            return "Failed to stop playback."
+            return Error("Failed to stop playback.")
 
     async def handle_skip_action(
         self,
@@ -436,16 +438,16 @@ class Bot(commands.Bot):
         player: wavelink.Player,
     ) -> str:
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player:
-            return "No active player."
+            return Error("No active player.")
         try:
             self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
             await player.skip(force=True)
-            return "Skipped the current track."
+            return Success("Skipped the current track.")
         except Exception as e:
             logging.error(f"Skip error: {e}")
-            return "Failed to skip the track."
+            return Error("Failed to skip the track.")
 
     async def handle_toggle_action(
         self,
@@ -455,21 +457,21 @@ class Bot(commands.Bot):
         player: wavelink.Player,
     ) -> str:
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player:
-            return "No active player."
+            return Error("No active player.")
 
         new_pause_state = not player.paused
         try:
             await player.pause(new_pause_state)
         except Exception as e:
             logging.error(f"Toggle error: {e}")
-            return "Failed to toggle pause/resume."
+            return Error("Failed to toggle pause/resume.")
 
         action = "Paused" if new_pause_state else "Resumed"
         self.set_latest_action(f"{action} by {user.display_name}")
         await self.update_setup_embed(guild, player)
-        return f"{action} the current track."
+        return Success(f"{action} the current track.")
 
     async def handle_disconnect_action(
         self,
@@ -514,17 +516,17 @@ class Bot(commands.Bot):
         player: wavelink.Player,
     ) -> str:
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player or player.queue.is_empty:
-            return "No active player or the queue is empty."
+            return Error("No active player or the queue is empty.")
         try:
             player.queue.shuffle()
             self.set_latest_action(f"Shuffled by {user.display_name}")
             await self.update_setup_embed(guild, player)
-            return "The queue has been shuffled!"
+            return Success("The queue has been shuffled!")
         except Exception as e:
             logging.error(f"Shuffle error: {e}")
-            return "Failed to shuffle the queue."
+            return Error("Failed to shuffle the queue.")
 
     async def handle_nightcore_action(
         self,
@@ -535,9 +537,9 @@ class Bot(commands.Bot):
         mode: int,
     ) -> str:
         if err := await self.voice_precheck(user, guild):
-            return err
+            return Error(err)
         if not player:
-            return "No active player."
+            return Error("No active player.")
 
         filters = player.filters
         try:
@@ -552,10 +554,10 @@ class Bot(commands.Bot):
 
             await player.set_filters(filters)
             await self.update_setup_embed(guild, player)
-            return msg
+            return Success(msg)
         except Exception as e:
             logging.error(f"Filter update error: {e}")
-            return "Failed to update filters."
+            return Error("Failed to update filters.")
 
     async def handle_stay_247_action(
         self,
@@ -574,7 +576,7 @@ class Bot(commands.Bot):
         await self.check_voice_channel_empty_and_leave(user)
 
         status = "enabled" if new_value else "disabled"
-        return f"24/7 mode {status}!"
+        return Success(f"24/7 mode {status}!")
 
     async def check_voice_channel_empty_and_leave(self, member: discord.Member):
         vc = member.guild.voice_client

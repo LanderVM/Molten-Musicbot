@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from dataclasses import dataclass
 
 SETUP_CHANNELS_FILE = "setup_channels.json"
 
@@ -68,3 +69,23 @@ def format_duration(ms: int) -> str:
     if hours > 0:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes}:{seconds:02d}"
+
+
+@dataclass
+class Error:
+    """Represents an error result."""
+
+    message: str
+
+    def __str__(self):
+        return self.message
+
+
+@dataclass
+class Success:
+    """Represents a non‐error result."""
+
+    message: str
+
+    def __str__(self):
+        return self.message

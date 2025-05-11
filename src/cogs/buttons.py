@@ -7,6 +7,8 @@ import wavelink
 from discord import Interaction
 from discord.ui import Button, View, button
 
+from utils import Error
+
 if TYPE_CHECKING:
     from music_bot import Bot
 
@@ -60,24 +62,40 @@ class PlayerControlView(View):
 
     @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
     async def stop_button(self, interaction: Interaction, button: Button):
-        await self.bot.handle_stop_action(
+        msg = await self.bot.handle_stop_action(
             interaction, interaction.guild, interaction.user, self.player
         )
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        else:
+            await interaction.response.defer()
 
     @button(emoji="⏸️", custom_id=ControlButton.PAUSE_RESUME.value)
     async def pause_button(self, interaction: Interaction, button: Button):
-        await self.bot.handle_toggle_action(
+        msg = await self.bot.handle_toggle_action(
             interaction, interaction.guild, interaction.user, self.player
         )
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        else:
+            await interaction.response.defer()
 
     @button(emoji="⏭️", custom_id=ControlButton.SKIP.value)
     async def skip_button(self, interaction: Interaction, button: Button):
-        await self.bot.handle_skip_action(
+        msg = await self.bot.handle_skip_action(
             interaction, interaction.guild, interaction.user, self.player
         )
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        else:
+            await interaction.response.defer()
 
     @button(emoji="🔀", custom_id=ControlButton.SHUFFLE.value)
     async def shuffle_button(self, interaction: Interaction, button: Button):
-        await self.bot.handle_shuffle_action(
+        msg = await self.bot.handle_shuffle_action(
             interaction, interaction.guild, interaction.user, self.player
         )
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        else:
+            await interaction.response.defer()
