@@ -166,6 +166,17 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(
+        name="247", description="Toggle 24/7 mode for the music channel."
+    )
+    @app_commands.check(dj_role_required)
+    async def enable_247(self, interaction: discord.Interaction):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        msg = await self.bot.handle_stay_247_action(
+            interaction, interaction.guild, interaction.user, player
+        )
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+
+    @app_commands.command(
         name="help",
         description="Get information on how to set up the music bot and usage instructions.",
     )

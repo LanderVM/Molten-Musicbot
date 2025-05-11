@@ -5,6 +5,7 @@ class SetupChannelKeys(StrEnum):
     CHANNEL = "channel"
     MESSAGE = "message"
     DJ_ROLE = "dj_role"
+    STAY_247 = "stay_247"
     DJ_ROLE_NAME = "Molten_DJ"
 
 

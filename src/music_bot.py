@@ -487,7 +487,7 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
             return "Failed to disconnect the player."
-        
+
         await self.update_setup_embed(
             guild,
             player,
@@ -537,11 +537,7 @@ class Bot(commands.Bot):
         if err := await self.voice_precheck(user, guild):
             return err
         if not player:
-            try:
-                player = await user.voice.channel.connect(cls=wavelink.Player)
-            except Exception as e:
-                logging.error(f"Nightcore connection failed: {e}")
-                return "Failed to join your voice channel."
+            return "No active player."
 
         filters = player.filters
         try:
@@ -560,6 +556,62 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error(f"Filter update error: {e}")
             return "Failed to update filters."
+
+    async def handle_stay_247_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+    ) -> str:
+        current = self.setup_channels.get(guild.id, {}).get(
+            SetupChannelKeys.STAY_247, False
+        )
+        new_value = not current
+        self.setup_channels[guild.id][SetupChannelKeys.STAY_247] = new_value
+
+        save_setup_channels(self.setup_channels)
+        await self.check_voice_channel_empty_and_leave(user)
+
+        status = "enabled" if new_value else "disabled"
+        return f"24/7 mode {status}!"
+
+    async def check_voice_channel_empty_and_leave(self, member: discord.Member):
+        vc = member.guild.voice_client
+        if not vc or not vc.channel:
+            return
+
+        if member.bot:
+            return
+
+        non_bots = [m for m in vc.channel.members if not m.bot]
+        if non_bots:
+            return
+
+        guild = member.guild
+        stay = self.setup_channels.get(guild.id, {}).get(
+            SetupChannelKeys.STAY_247, False
+        )
+
+        if not stay:
+            player: wavelink.Player = cast(wavelink.Player, vc)
+
+            await self.update_setup_embed(
+                player.guild,
+                player,
+                embed=self.create_default_embed(),
+                view=PlayerControlView(
+                    self,
+                    player,
+                    disabled_buttons=[
+                        ControlButton.STOP,
+                        ControlButton.PAUSE_RESUME,
+                        ControlButton.SKIP,
+                        ControlButton.SHUFFLE,
+                    ],
+                ),
+            )
+            await vc.disconnect()
 
     async def update_setup_embed(
         self,

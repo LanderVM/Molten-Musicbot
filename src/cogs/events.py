@@ -31,7 +31,6 @@ class EventHandlers(commands.Cog):
         logging.info("Connecting to Discord...")
         await self.bot.wait_until_ready()
         logging.info("Connected to Discord.")
-    
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -142,6 +141,14 @@ class EventHandlers(commands.Cog):
 
         if err := await self.bot.handle_setup_play(message):
             await message.channel.send(err, delete_after=5)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """
+        Called when a voice state is updated.
+        This includes joining, leaving, or moving between voice channels.
+        """
+        await self.bot.check_voice_channel_empty_and_leave(member)
 
 
 async def setup(bot: commands.Bot):
