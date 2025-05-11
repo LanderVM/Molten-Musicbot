@@ -8,6 +8,7 @@ import wavelink
 from discord.ext import commands
 
 from cogs.buttons import ControlButton, PlayerControlView
+from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -139,8 +140,9 @@ class EventHandlers(commands.Cog):
         if message.channel.id != setup_data.get("channel"):
             return
 
-        if err := await self.bot.handle_setup_play(message):
-            await message.channel.send(err, delete_after=5)
+        msg = await self.bot.handle_setup_play(message)
+        if isinstance(msg, Error):
+            await message.channel.send(msg, delete_after=5)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):

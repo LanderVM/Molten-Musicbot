@@ -342,12 +342,9 @@ class Bot(commands.Bot):
         try:
             await message.delete()
         except discord.NotFound:
-            return "Message not found; nothing to delete."
+            return Error("Message not found; nothing to delete.")
 
-        if err := await self.voice_precheck(message.author, message.guild):
-            return err
-
-        await self.handle_play_action(
+        return await self.handle_play_action(
             message,
             message.guild,
             message.author,
@@ -377,7 +374,7 @@ class Bot(commands.Bot):
         try:
             tracks = await wavelink.Playable.search(query)
             if not tracks:
-                return "Could not find any tracks with that query."
+                return Error("Could not find any tracks with that query.")
 
             if isinstance(tracks, wavelink.Playlist):
                 for track in tracks.tracks:
@@ -398,10 +395,10 @@ class Bot(commands.Bot):
             if not player.queue.is_empty:
                 view = PlayerControlView(self, player)
                 await self.update_setup_buttons(player.guild, view)
-            return msg
+            return Success(msg)
         except Exception as e:
             logging.error(f"Playback error: {e}")
-            return "Playback error occurred."
+            return Error("Playback error occurred.")
 
     async def handle_stop_action(
         self,
