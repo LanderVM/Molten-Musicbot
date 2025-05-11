@@ -192,6 +192,7 @@ Once the channel is created, you can:
 - Use the `/toggle` command to pause or resume the song.
 - Use the `/stop` command to stop playback and clear the queue.
 - Use the `/shuffle` command to shuffle the current queue.
+- Use the `/247` command to enable or disable 24/7 mode for the music channel.
 - Use the `/nightcore` command to toggle the Nightcore effect on or off.
 - Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
 - Use the `/remove_dj` command to remove the DJ role and make the channel public.
