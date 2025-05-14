@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import cast
+from collections import defaultdict
 
 import discord
 import wavelink
@@ -20,8 +21,43 @@ from utils import (
     save_setup_channels,
 )
 
+from functools import wraps
+
 load_dotenv()
 
+def debounce_action(delay: float = 0.5):
+    """
+    Decorator to ensure that only one action per guild can run
+    within `delay` seconds. Subsequent calls return an Error.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(self, interaction, guild, user, *args, **kwargs):
+            lock = self._action_locks[guild.id]
+            if lock.locked():
+                return Error("Too many button presses at once—please wait a moment.")
+            await lock.acquire()
+
+            logging.debug(f"[{guild.id}] lock acquired by {user.display_name}")
+            asyncio.create_task(
+                self._release_lock_after(lock, delay)
+            )
+            return await fn(self, interaction, guild, user, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def ensure_voice(fn):
+    """
+    Decorator to run voice_precheck before the action.
+    If it returns an error string, immediately return Error(err).
+    """
+    @wraps(fn)
+    async def wrapper(self, interaction, guild, user, *args, **kwargs):
+        err = await self.voice_precheck(user, guild)
+        if err:
+            return Error(err)
+        return await fn(self, interaction, guild, user, *args, **kwargs)
+    return wrapper
 
 class Bot(commands.Bot):
     def __init__(self) -> None:
@@ -46,6 +82,7 @@ class Bot(commands.Bot):
         self.delete_message_tags: set[int] = set()
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
+        self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     def set_latest_action(self, action: str, persist: bool = False):
         """
@@ -352,6 +389,14 @@ class Bot(commands.Bot):
             message.content,
         )
 
+    async def _release_lock_after(self, lock: asyncio.Lock, delay: float):
+        await asyncio.sleep(delay)
+        if lock.locked():
+            lock.release()
+            logging.debug(f"Lock released after {delay} seconds.")
+
+    @ensure_voice
+    @debounce_action(delay=0.1)
     async def handle_play_action(
         self,
         interaction: discord.Interaction,
@@ -359,9 +404,7 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
         query: str,
-    ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
+    ) -> str:        
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
@@ -399,7 +442,9 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error(f"Playback error: {e}")
             return Error("Playback error occurred.")
-
+    
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_stop_action(
         self,
         interaction: discord.Interaction,
@@ -410,8 +455,6 @@ class Bot(commands.Bot):
         """
         Stops the current track, clears the queue, but stays connected.
         """
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
         if not player:
             return Error("No active player.")
 
@@ -427,6 +470,8 @@ class Bot(commands.Bot):
             logging.error(f"Stop error: {e}")
             return Error("Failed to stop playback.")
 
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_skip_action(
         self,
         interaction: discord.Interaction,
@@ -434,8 +479,6 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
         if not player:
             return Error("No active player.")
         try:
@@ -446,6 +489,8 @@ class Bot(commands.Bot):
             logging.error(f"Skip error: {e}")
             return Error("Failed to skip the track.")
 
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_toggle_action(
         self,
         interaction: discord.Interaction,
@@ -453,8 +498,6 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
         if not player:
             return Error("No active player.")
 
@@ -505,6 +548,7 @@ class Bot(commands.Bot):
 
         return "Disconnected the player."
 
+    @ensure_voice
     async def handle_shuffle_action(
         self,
         interaction: discord.Interaction,
@@ -512,8 +556,6 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
         if not player or player.queue.is_empty:
             return Error("No active player or the queue is empty.")
         try:
@@ -525,6 +567,7 @@ class Bot(commands.Bot):
             logging.error(f"Shuffle error: {e}")
             return Error("Failed to shuffle the queue.")
 
+    @ensure_voice
     async def handle_nightcore_action(
         self,
         interaction: discord.Interaction,
@@ -533,8 +576,6 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         mode: int,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return Error(err)
         if not player:
             return Error("No active player.")
 

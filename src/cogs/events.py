@@ -114,18 +114,6 @@ class EventHandlers(commands.Cog):
                     logging.error("Error updating embed on track end: %s", e)
 
     @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        """
-        Called when an interaction is received.
-        Defers the response for component interactions if not already done.
-
-        :param interaction: The interaction instance from Discord.
-        """
-        # if interaction.type == discord.InteractionType.component:
-        #    if not interaction.response.is_done():
-        #        await interaction.response.defer()
-
-    @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """
         Called when a message is sent in a guild.
