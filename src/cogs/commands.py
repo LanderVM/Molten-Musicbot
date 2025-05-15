@@ -138,6 +138,7 @@ class MusicCommands(commands.Cog):
         )
         if isinstance(result, Error):
             await interaction.response.send_message(result, ephemeral=True)
+            return
         embed, view = result
         await interaction.response.send_message(
             embed=embed, view=view, ephemeral=True, delete_after=120
