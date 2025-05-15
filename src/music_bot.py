@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from functools import wraps
-from typing import cast
+from typing import List, cast
 
 import discord
 import wavelink
@@ -584,6 +584,21 @@ class Bot(commands.Bot):
             logging.error(f"Shuffle error: {e}")
             return Error("Failed to shuffle the queue.")
 
+    async def handle_queue_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+    ):
+        if not player or not player.queue:
+            return Error("The queue is empty.")
+
+        tracks = player.queue.copy()
+        view = QueueView(interaction.user, tracks)
+        embed = view.current_embed()
+        return embed, view
+
     @ensure_voice
     @debounce_action(delay=0.5)
     async def handle_forward_action(
@@ -838,3 +853,59 @@ class Bot(commands.Bot):
             self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
         except Exception as e:
             logging.error(f"Failed to update buttons on setup message: {e}")
+
+
+PAGE_SIZE = 10
+
+
+class QueueView(discord.ui.View):
+    def __init__(self, user: discord.User, tracks: List[wavelink.Playable]):
+        super().__init__(timeout=120)
+        self.user = user
+        self.tracks = tracks
+
+        # --- PRECOMPUTE ALL PAGES AT INIT TIME ---
+        self.embeds: List[discord.Embed] = []
+        total_pages = (len(tracks) - 1) // PAGE_SIZE + 1
+        for page in range(total_pages):
+            start = page * PAGE_SIZE
+            chunk = tracks[start : start + PAGE_SIZE]
+
+            # build each page’s embed
+            lines = []
+            for i, track in enumerate(chunk, start=start + 1):
+                dur = f"{track.length//60000}:{(track.length%60000)//1000:02}"
+                lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
+
+            desc = (
+                f"Page {page+1}/{total_pages}\n"
+                f"Total tracks: {len(tracks)}\n\n" + "\n".join(lines)
+            )
+            embed = discord.Embed(
+                title="Queue", description=desc, color=discord.Color.purple()
+            )
+            self.embeds.append(embed)
+
+        # state
+        self.page = 0
+        self.prev.disabled = True
+        self.next.disabled = len(self.embeds) <= 1
+
+    def current_embed(self) -> discord.Embed:
+        return self.embeds[self.page]
+
+    # initial message will call .current_embed()
+
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary)
+    async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        self.prev.disabled = self.page == 0
+        self.next.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        self.next.disabled = self.page >= len(self.embeds) - 1
+        self.prev.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)

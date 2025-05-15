@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from enums import SetupChannelKeys
+from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -127,6 +128,20 @@ class MusicCommands(commands.Cog):
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
+    @app_commands.command(name="queue", description="Display the current queue.")
+    @app_commands.check(dj_role_required)
+    async def queue(self, interaction: discord.Interaction):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        result = await self.bot.handle_queue_action(
+            interaction, interaction.guild, interaction.user, player
+        )
+        if isinstance(result, Error):
+            await interaction.response.send_message(result, ephemeral=True)
+        embed, view = result
+        await interaction.response.send_message(
+            embed=embed, view=view, ephemeral=True, delete_after=120
+        )
+
     @app_commands.command(
         name="forward", description="Forward song by a given number of seconds"
     )
@@ -201,7 +216,7 @@ To set up a music request channel in your server, use the `/setup` command. This
         
 Once the channel is created, you can:
 - Use the `/play <song name>` command to play a song.
-- Use the `/skip` command to skip the current song.
+- Use the `/skip [count]` command to skip the current song.
 - Use the `/toggle` command to pause or resume the song.
 - Use the `/stop` command to stop playback and clear the queue.
 - Use the `/shuffle` command to shuffle the current queue.
@@ -210,6 +225,8 @@ Once the channel is created, you can:
 - Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
 - Use the `/remove_dj` command to remove the DJ role and make the channel public.
 - Use the `/disconnect` command to disconnect the player and stop playback.
+- Use the `/forward <seconds>` command to skip forward by a given number of seconds.
+- Use the `/queue` command to display the current queue of songs.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
 
