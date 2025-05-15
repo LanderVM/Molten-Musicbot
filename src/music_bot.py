@@ -198,7 +198,7 @@ class Bot(commands.Bot):
 
         try:
             channel = await guild.create_text_channel(
-                name="🎵music-requests", overwrites=overwrites
+                name="🎵music-requests", overwrites=overwrites, slowmode_delay=2
             )
             embed = self.create_default_embed()
             view = PlayerControlView(self, None)
