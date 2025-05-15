@@ -130,10 +130,11 @@ class MusicCommands(commands.Cog):
 
     @app_commands.command(name="queue", description="Display the current queue.")
     @app_commands.check(dj_role_required)
-    async def queue(self, interaction: discord.Interaction):
+    @app_commands.describe(page_size="Number of songs to display per page (At least 10)")
+    async def queue(self, interaction: discord.Interaction, page_size: app_commands.Range[int, 10, None] = 20):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         result = await self.bot.handle_queue_action(
-            interaction, interaction.guild, interaction.user, player
+            interaction, interaction.guild, interaction.user, player, page_size
         )
         if isinstance(result, Error):
             await interaction.response.send_message(result, ephemeral=True)

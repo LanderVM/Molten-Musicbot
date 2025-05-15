@@ -590,12 +590,13 @@ class Bot(commands.Bot):
         guild: discord.Guild,
         user: discord.User,
         player: wavelink.Player,
+        page_size: int,
     ):
         if not player or not player.queue:
             return Error("The queue is empty.")
 
         tracks = player.queue.copy()
-        view = QueueView(interaction.user, tracks)
+        view = QueueView(interaction.user, tracks, page_size)
         embed = view.current_embed()
         return embed, view
 
@@ -855,21 +856,18 @@ class Bot(commands.Bot):
             logging.error(f"Failed to update buttons on setup message: {e}")
 
 
-PAGE_SIZE = 10
-
-
 class QueueView(discord.ui.View):
-    def __init__(self, user: discord.User, tracks: List[wavelink.Playable]):
+    def __init__(self, user: discord.User, tracks: List[wavelink.Playable], page_size: int = 15):
         super().__init__(timeout=120)
         self.user = user
         self.tracks = tracks
 
         # --- PRECOMPUTE ALL PAGES AT INIT TIME ---
         self.embeds: List[discord.Embed] = []
-        total_pages = (len(tracks) - 1) // PAGE_SIZE + 1
+        total_pages = (len(tracks) - 1) // page_size + 1
         for page in range(total_pages):
-            start = page * PAGE_SIZE
-            chunk = tracks[start : start + PAGE_SIZE]
+            start = page * page_size
+            chunk = tracks[start : start + page_size]
 
             # build each page’s embed
             lines = []
