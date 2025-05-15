@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import discord
 import wavelink
@@ -88,10 +88,11 @@ class MusicCommands(commands.Cog):
 
     @app_commands.command(name="skip", description="Skip the current song.")
     @app_commands.check(dj_role_required)
-    async def skip(self, interaction: discord.Interaction):
+    @app_commands.describe(count="How many tracks to skip (default = 1)")
+    async def skip(self, interaction: discord.Interaction, count: Optional[int] = 1):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_skip_action(
-            interaction, interaction.guild, interaction.user, player
+            interaction, interaction.guild, interaction.user, player, count
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
@@ -123,6 +124,18 @@ class MusicCommands(commands.Cog):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_shuffle_action(
             interaction, interaction.guild, interaction.user, player
+        )
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+
+    @app_commands.command(
+        name="forward", description="Forward song by a given number of seconds"
+    )
+    @app_commands.check(dj_role_required)
+    @app_commands.describe(seconds="Number of seconds to skip forward")
+    async def forward(self, interaction: discord.Interaction, seconds: int):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        msg = await self.bot.handle_forward_action(
+            interaction, interaction.guild, interaction.user, player, seconds
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 

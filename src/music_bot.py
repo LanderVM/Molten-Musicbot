@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
-from typing import cast
 from collections import defaultdict
+from datetime import datetime, timezone
+from functools import wraps
+from typing import cast
 
 import discord
 import wavelink
@@ -21,15 +22,15 @@ from utils import (
     save_setup_channels,
 )
 
-from functools import wraps
-
 load_dotenv()
+
 
 def debounce_action(delay: float = 0.5):
     """
     Decorator to ensure that only one action per guild can run
     within `delay` seconds. Subsequent calls return an Error.
     """
+
     def decorator(fn):
         @wraps(fn)
         async def wrapper(self, interaction, guild, user, *args, **kwargs):
@@ -39,25 +40,29 @@ def debounce_action(delay: float = 0.5):
             await lock.acquire()
 
             logging.debug(f"[{guild.id}] lock acquired by {user.display_name}")
-            asyncio.create_task(
-                self._release_lock_after(lock, delay)
-            )
+            asyncio.create_task(self._release_lock_after(lock, delay))
             return await fn(self, interaction, guild, user, *args, **kwargs)
+
         return wrapper
+
     return decorator
+
 
 def ensure_voice(fn):
     """
     Decorator to run voice_precheck before the action.
     If it returns an error string, immediately return Error(err).
     """
+
     @wraps(fn)
     async def wrapper(self, interaction, guild, user, *args, **kwargs):
         err = await self.voice_precheck(user, guild)
         if err:
             return Error(err)
         return await fn(self, interaction, guild, user, *args, **kwargs)
+
     return wrapper
+
 
 class Bot(commands.Bot):
     def __init__(self) -> None:
@@ -404,7 +409,7 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
         query: str,
-    ) -> str:        
+    ) -> str:
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
@@ -442,7 +447,7 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error(f"Playback error: {e}")
             return Error("Playback error occurred.")
-    
+
     @ensure_voice
     @debounce_action(delay=1)
     async def handle_stop_action(
@@ -478,16 +483,28 @@ class Bot(commands.Bot):
         guild: discord.Guild,
         user: discord.User,
         player: wavelink.Player,
+        count: int = 1,
     ) -> str:
-        if not player:
+        if not player or not player.playing:
             return Error("No active player.")
+        if count - 1 > player.queue.count:
+            return Error(
+                f"Cannot skip {count} tracks; only {player.queue.count} in the queue."
+            )
+        if count > 1:
+            for _ in range(count - 1):
+                try:
+                    player.queue.delete(0)
+                except IndexError:
+                    break
+
         try:
             self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
             await player.skip(force=True)
-            return Success("Skipped the current track.")
+            return Success(f"⏭️ Skipped {count} track{'s' if count>1 else ''}.")
         except Exception as e:
-            logging.error(f"Skip error: {e}")
-            return Error("Failed to skip the track.")
+            logging.error("Skip error", exc_info=e)
+            return Error("Failed to skip.")
 
     @ensure_voice
     @debounce_action(delay=1)
@@ -566,6 +583,32 @@ class Bot(commands.Bot):
         except Exception as e:
             logging.error(f"Shuffle error: {e}")
             return Error("Failed to shuffle the queue.")
+
+    @ensure_voice
+    @debounce_action(delay=0.5)
+    async def handle_forward_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+        seconds: int,
+    ) -> str:
+        if not player or not player.playing:
+            return Error("No track is currently playing.")
+
+        new_pos = player.position + (seconds * 1000)
+        if new_pos >= player.current.length:
+            return Error("Cannot forward beyond the end of the track.")
+
+        try:
+            await player.seek(new_pos)
+            self.set_latest_action(f"Forwarded by {user.display_name}", persist=True)
+            await self.update_setup_embed(guild, player)
+            return Success(f"⏩ Forwarded {seconds} seconds.")
+        except Exception as e:
+            logging.error(f"Forward error: {e}")
+            return Error("Failed to forward playback.")
 
     @ensure_voice
     async def handle_nightcore_action(
