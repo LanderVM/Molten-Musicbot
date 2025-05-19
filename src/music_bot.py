@@ -380,11 +380,16 @@ class Bot(commands.Bot):
 
         return "DJ role removed. The music channel is now public for everyone."
 
-    async def handle_setup_play(self, message: discord.Message) -> str:
+    async def _delayed_delete(self, message: discord.Message, delay: float = 0.2):
+        """Deletes `message` after `delay` seconds, ignoring NotFound."""
+        await asyncio.sleep(delay)
         try:
             await message.delete()
         except discord.NotFound:
-            return Error("Message not found; nothing to delete.")
+            pass
+
+    async def handle_setup_play(self, message: discord.Message) -> str:
+        asyncio.create_task(self._delayed_delete(message, delay=0.2))
 
         return await self.handle_play_action(
             message,
@@ -410,43 +415,71 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         query: str,
     ) -> str:
+
+        # 1) Kick off the YouTube search immediately
+        search_task = asyncio.create_task(wavelink.Playable.search(query))
+
+        # 2) Join voice if needed (sync, so we can tell users exactly why it failed)
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
-                logging.error(f"Voice connection failed: {e}")
-                return Error("Failed to join your voice channel.")
+                logging.error("Voice connection failed: %s", e)
+                return Error("🚫 Could not join your voice channel.")
+
+        # 3) Wait for search results (report errors clearly)
+        try:
+            tracks = await search_task
+        except Exception as e:
+            logging.error("Search failed: %s", e)
+            return Error("🔍 Could not search for that track.")
+
+        if not tracks:
+            return Error("❌ No results found for that query.")
 
         player.autoplay = wavelink.AutoPlayMode.partial
 
-        try:
-            tracks = await wavelink.Playable.search(query)
-            if not tracks:
-                return Error("Could not find any tracks with that query.")
+        # 4) Enqueue: synchronously enqueue the first track
+        if isinstance(tracks, wavelink.Playlist):
+            first = tracks.tracks[0]
+            first.requester = user
+            await player.queue.put_wait(first)
+            msg = f"Added playlist **`{tracks.name}`** to the queue."
 
-            if isinstance(tracks, wavelink.Playlist):
-                for track in tracks.tracks:
-                    track.requester = user
-                await player.queue.put_wait(tracks)
-                msg = f"Added playlist **`{tracks.name}`** to the queue."
-            else:
-                track = tracks[0]
-                track.requester = user
-                await player.queue.put_wait(track)
-                msg = f"Added **`{track}`** to the queue."
+            # background‑enqueue the rest, one by one
+            async def _enqueue_rest():
+                for t in tracks.tracks[1:]:
+                    t.requester = user
+                    await player.queue.put_wait(t)
 
-            if not player.playing:
-                await player.play(
-                    player.queue.get(),
-                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
-                )
-            if not player.queue.is_empty:
-                view = PlayerControlView(self, player)
-                await self.update_setup_buttons(player.guild, view)
-            return Success(msg)
-        except Exception as e:
-            logging.error(f"Playback error: {e}")
-            return Error("Playback error occurred.")
+            asyncio.create_task(_enqueue_rest())
+
+        else:
+            track = tracks[0]
+            track.requester = user
+            await player.queue.put_wait(track)
+            msg = f"Added **`{track}`** to the queue."
+
+        # 5) If nothing’s playing, pull the next track (awaited!) and play
+        if not player.playing:
+            # small buffer cushion
+            await asyncio.sleep(0.2)
+            next_track = await player.queue.get_wait()
+            await player.play(
+                next_track,
+                volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
+            )
+
+        # 6) Fire‑and‑forget updating buttons/UI
+        asyncio.create_task(
+            self.update_setup_buttons(
+                player.guild,
+                PlayerControlView(self, player)
+            )
+        )
+
+        # 7) Return the Success msg (caller will send it)
+        return Success(msg)
 
     @ensure_voice
     @debounce_action(delay=1)
@@ -662,14 +695,15 @@ class Bot(commands.Bot):
         guild: discord.Guild,
         user: discord.User,
         player: wavelink.Player,
-    ) -> str:
-        current = self.setup_channels.get(guild.id, {}).get(
-            SetupChannelKeys.STAY_247, False
-        )
+    ) -> str:   
+        setup_data = self.setup_channels.setdefault(guild.id, {})
+
+        current = setup_data.get(SetupChannelKeys.STAY_247, False)
         new_value = not current
-        self.setup_channels[guild.id][SetupChannelKeys.STAY_247] = new_value
+        setup_data[SetupChannelKeys.STAY_247] = new_value
 
         save_setup_channels(self.setup_channels)
+
         await self.check_voice_channel_empty_and_leave(user)
 
         status = "enabled" if new_value else "disabled"

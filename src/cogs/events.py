@@ -140,7 +140,32 @@ class EventHandlers(commands.Cog):
         """
         await self.bot.check_voice_channel_empty_and_leave(member)
 
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+        """
+        Fired when a track errors during playback.
+        For live streams that die, we auto-skip to the next track.
+        """
+        player = payload.player
+        logging.warning(
+            "Track exception on guild %s: %s — skipping",
+            player.guild.id, payload.exception
+        )
+        await player.skip()
 
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
+        """
+        Fired when Lavalink detects no frames for a while.
+        Treat it the same as an exception.
+        """
+        player = payload.player
+        logging.warning(
+            "Track stuck on guild %s at position %sms — skipping",
+            player.guild.id, payload.threshold
+        )
+        await player.skip()
+        
 async def setup(bot: commands.Bot):
     """
     The setup function for adding the EventHandlers cog to the bot.
