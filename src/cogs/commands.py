@@ -90,7 +90,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(name="skip", description="Skip the current song.")
     @app_commands.check(dj_role_required)
     @app_commands.describe(count="How many tracks to skip (default = 1)")
-    async def skip(self, interaction: discord.Interaction, count: Optional[int] = 1):
+    async def skip(self, interaction: discord.Interaction,  count: Optional[app_commands.Range[int, 1, None]] = 1):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_skip_action(
             interaction, interaction.guild, interaction.user, player, count
@@ -130,8 +130,8 @@ class MusicCommands(commands.Cog):
 
     @app_commands.command(name="queue", description="Display the current queue.")
     @app_commands.check(dj_role_required)
-    @app_commands.describe(page_size="Number of songs to display per page (At least 10)")
-    async def queue(self, interaction: discord.Interaction, page_size: app_commands.Range[int, 10, None] = 20):
+    @app_commands.describe(page_size="Number of songs to display per page [10-25]")
+    async def queue(self, interaction: discord.Interaction, page_size: app_commands.Range[int, 10, 25] = 20):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         result = await self.bot.handle_queue_action(
             interaction, interaction.guild, interaction.user, player, page_size
@@ -149,7 +149,7 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.check(dj_role_required)
     @app_commands.describe(seconds="Number of seconds to skip forward")
-    async def forward(self, interaction: discord.Interaction, seconds: int):
+    async def forward(self, interaction: discord.Interaction, seconds: app_commands.Range[int, 1, None]):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_forward_action(
             interaction, interaction.guild, interaction.user, player, seconds

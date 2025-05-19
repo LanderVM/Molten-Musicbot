@@ -279,7 +279,7 @@ class Bot(commands.Bot):
         Return an error message if the user is not in a voice channel
         or is not in the same one as the bot. Otherwise None.
         """
-        member = guild.get_member(user.id)  # type: ignore
+        member = guild.get_member(user.id)
         if not member or not member.voice or not member.voice.channel:
             return "🚫 You must join a voice channel first."
 
@@ -415,11 +415,8 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         query: str,
     ) -> str:
-
-        # 1) Kick off the YouTube search immediately
         search_task = asyncio.create_task(wavelink.Playable.search(query))
 
-        # 2) Join voice if needed (sync, so we can tell users exactly why it failed)
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
@@ -427,7 +424,6 @@ class Bot(commands.Bot):
                 logging.error("Voice connection failed: %s", e)
                 return Error("🚫 Could not join your voice channel.")
 
-        # 3) Wait for search results (report errors clearly)
         try:
             tracks = await search_task
         except Exception as e:
@@ -439,14 +435,12 @@ class Bot(commands.Bot):
 
         player.autoplay = wavelink.AutoPlayMode.partial
 
-        # 4) Enqueue: synchronously enqueue the first track
         if isinstance(tracks, wavelink.Playlist):
             first = tracks.tracks[0]
             first.requester = user
             await player.queue.put_wait(first)
             msg = f"Added playlist **`{tracks.name}`** to the queue."
 
-            # background‑enqueue the rest, one by one
             async def _enqueue_rest():
                 for t in tracks.tracks[1:]:
                     t.requester = user
@@ -460,9 +454,7 @@ class Bot(commands.Bot):
             await player.queue.put_wait(track)
             msg = f"Added **`{track}`** to the queue."
 
-        # 5) If nothing’s playing, pull the next track (awaited!) and play
         if not player.playing:
-            # small buffer cushion
             await asyncio.sleep(0.2)
             next_track = await player.queue.get_wait()
             await player.play(
@@ -470,7 +462,6 @@ class Bot(commands.Bot):
                 volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
             )
 
-        # 6) Fire‑and‑forget updating buttons/UI
         asyncio.create_task(
             self.update_setup_buttons(
                 player.guild,
@@ -478,7 +469,6 @@ class Bot(commands.Bot):
             )
         )
 
-        # 7) Return the Success msg (caller will send it)
         return Success(msg)
 
     @ensure_voice
@@ -652,7 +642,7 @@ class Bot(commands.Bot):
 
         try:
             await player.seek(new_pos)
-            self.set_latest_action(f"Forwarded by {user.display_name}", persist=True)
+            self.set_latest_action(f"Forwarded {seconds}s by {user.display_name}", persist=True)
             await self.update_setup_embed(guild, player)
             return Success(f"⏩ Forwarded {seconds} seconds.")
         except Exception as e:
