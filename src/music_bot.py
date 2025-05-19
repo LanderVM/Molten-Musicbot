@@ -3,7 +3,6 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from functools import wraps
 from typing import List, cast
 
 import discord
@@ -12,6 +11,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from cogs.buttons import ControlButton, PlayerControlView
+from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
     Error,
@@ -23,45 +23,6 @@ from utils import (
 )
 
 load_dotenv()
-
-
-def debounce_action(delay: float = 0.5):
-    """
-    Decorator to ensure that only one action per guild can run
-    within `delay` seconds. Subsequent calls return an Error.
-    """
-
-    def decorator(fn):
-        @wraps(fn)
-        async def wrapper(self, interaction, guild, user, *args, **kwargs):
-            lock = self._action_locks[guild.id]
-            if lock.locked():
-                return Error("Too many button presses at once—please wait a moment.")
-            await lock.acquire()
-
-            logging.debug(f"[{guild.id}] lock acquired by {user.display_name}")
-            asyncio.create_task(self._release_lock_after(lock, delay))
-            return await fn(self, interaction, guild, user, *args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def ensure_voice(fn):
-    """
-    Decorator to run voice_precheck before the action.
-    If it returns an error string, immediately return Error(err).
-    """
-
-    @wraps(fn)
-    async def wrapper(self, interaction, guild, user, *args, **kwargs):
-        err = await self.voice_precheck(user, guild)
-        if err:
-            return Error(err)
-        return await fn(self, interaction, guild, user, *args, **kwargs)
-
-    return wrapper
 
 
 class Bot(commands.Bot):
@@ -146,7 +107,7 @@ class Bot(commands.Bot):
 
             channel = guild.get_channel(channel_id)
             if not channel:
-                logging.error(
+                logging.warning(
                     f"Channel {channel_id} not found in guild {guild_id}. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -157,7 +118,7 @@ class Bot(commands.Bot):
                 self.setup_message_cache[guild_id] = msg
                 logging.info(f"Cached setup message for guild {guild_id}.")
             except Exception as e:
-                logging.error(
+                logging.warning(
                     f"Error fetching setup message for guild {guild_id}: {e}. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -198,7 +159,7 @@ class Bot(commands.Bot):
 
         try:
             channel = await guild.create_text_channel(
-                name="🎵music-requests", overwrites=overwrites, slowmode_delay=2
+                name="🎧song-requests", overwrites=overwrites, slowmode_delay=2
             )
             embed = self.create_default_embed()
             view = PlayerControlView(self, None)
@@ -463,10 +424,7 @@ class Bot(commands.Bot):
             )
 
         asyncio.create_task(
-            self.update_setup_buttons(
-                player.guild,
-                PlayerControlView(self, player)
-            )
+            self.update_setup_buttons(player.guild, PlayerControlView(self, player))
         )
 
         return Success(msg)
@@ -560,8 +518,8 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if not player:
-            return "No active player."
+        if not guild.voice_client:
+            return Error("🚫 I’m not connected to any voice channel.")
         try:
             self.set_latest_action(f"Disconnected by {user.display_name}")
             await player.disconnect()
@@ -642,7 +600,9 @@ class Bot(commands.Bot):
 
         try:
             await player.seek(new_pos)
-            self.set_latest_action(f"Forwarded {seconds}s by {user.display_name}", persist=True)
+            self.set_latest_action(
+                f"Forwarded {seconds}s by {user.display_name}", persist=True
+            )
             await self.update_setup_embed(guild, player)
             return Success(f"⏩ Forwarded {seconds} seconds.")
         except Exception as e:
@@ -685,7 +645,7 @@ class Bot(commands.Bot):
         guild: discord.Guild,
         user: discord.User,
         player: wavelink.Player,
-    ) -> str:   
+    ) -> str:
         setup_data = self.setup_channels.setdefault(guild.id, {})
 
         current = setup_data.get(SetupChannelKeys.STAY_247, False)
@@ -881,7 +841,9 @@ class Bot(commands.Bot):
 
 
 class QueueView(discord.ui.View):
-    def __init__(self, user: discord.User, tracks: List[wavelink.Playable], page_size: int = 15):
+    def __init__(
+        self, user: discord.User, tracks: List[wavelink.Playable], page_size: int = 15
+    ):
         super().__init__(timeout=120)
         self.user = user
         self.tracks = tracks
