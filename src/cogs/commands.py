@@ -67,6 +67,9 @@ class MusicCommands(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setup_create(self, interaction: discord.Interaction):
         msg = await self.bot.create_setup_channel(interaction.guild)
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
         await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(name="play", description="Play a song with the given query.")

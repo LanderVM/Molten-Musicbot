@@ -99,7 +99,7 @@ class Bot(commands.Bot):
             message_id = data.get(SetupChannelKeys.MESSAGE)
             guild = self.get_guild(guild_id)
             if not guild:
-                logging.error(
+                logging.warning(
                     f"Guild {guild_id} not found. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -146,14 +146,18 @@ class Bot(commands.Bot):
         and returns a message string that the caller (commands) can display.
         """
         overwrites = {
+            guild.me: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_messages=True,
+                embed_links=True,
+            ),            
             guild.default_role: discord.PermissionOverwrite(
                 send_messages=True,
                 read_messages=True,
                 manage_messages=False,
                 embed_links=False,
-            ),
-            guild.me: discord.PermissionOverwrite(
-                send_messages=True, manage_messages=True, read_message_history=True
             ),
         }
 
@@ -191,7 +195,7 @@ class Bot(commands.Bot):
 
             return f"Music channel created: {channel.mention}"
         except discord.Forbidden:
-            return "I need permissions to manage channels!"
+            return "I need the following permissions: `Connect`, `Embed Links`, `Manage Channels`, `Manage Messages`, `Manage Roles`, `Send Messages`, `Speak` and `View Channels`."
 
     def create_now_playing_embed(
         self, track: wavelink.Playable, original: wavelink.Playable | None
@@ -715,7 +719,7 @@ class Bot(commands.Bot):
         message_id = setup_data.get(SetupChannelKeys.MESSAGE)
         channel = guild.get_channel(channel_id)
         if channel is None:
-            logging.error("Channel %s not found for guild %s", channel_id, guild.id)
+            logging.warning("Channel %s not found for guild %s", channel_id, guild.id)
             return
 
         embed = await self._fetch_or_create_embed(channel, message_id, embed)
@@ -821,7 +825,7 @@ class Bot(commands.Bot):
 
         channel = guild.get_channel(channel_id)
         if channel is None:
-            logging.error(f"Channel {channel_id} not found in guild {guild.id}")
+            logging.warning(f"Channel {channel_id} not found in guild {guild.id}")
             return
 
         msg = self.setup_message_cache.get(guild.id)
