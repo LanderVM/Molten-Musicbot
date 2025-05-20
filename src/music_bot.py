@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import os
+from collections import defaultdict
 from datetime import datetime, timezone
-from typing import cast
+from typing import List, cast
 
 import discord
 import wavelink
@@ -10,8 +11,11 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from cogs.buttons import ControlButton, PlayerControlView
+from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
 from utils import (
+    Error,
+    Success,
     format_duration,
     load_setup_channels,
     remove_setup_channel,
@@ -26,7 +30,13 @@ class Bot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
-        discord.utils.setup_logging(level=logging.INFO)
+        logging_level = (
+            logging.DEBUG
+            if os.getenv(EnvironmentKeys.LOG_LEVEL).lower() == "debug"
+            else logging.INFO
+        )
+        discord.utils.setup_logging(level=logging_level)
+
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -38,6 +48,7 @@ class Bot(commands.Bot):
         self.delete_message_tags: set[int] = set()
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
+        self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     def set_latest_action(self, action: str, persist: bool = False):
         """
@@ -88,7 +99,7 @@ class Bot(commands.Bot):
             message_id = data.get(SetupChannelKeys.MESSAGE)
             guild = self.get_guild(guild_id)
             if not guild:
-                logging.error(
+                logging.warning(
                     f"Guild {guild_id} not found. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -96,7 +107,7 @@ class Bot(commands.Bot):
 
             channel = guild.get_channel(channel_id)
             if not channel:
-                logging.error(
+                logging.warning(
                     f"Channel {channel_id} not found in guild {guild_id}. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -107,7 +118,7 @@ class Bot(commands.Bot):
                 self.setup_message_cache[guild_id] = msg
                 logging.info(f"Cached setup message for guild {guild_id}.")
             except Exception as e:
-                logging.error(
+                logging.warning(
                     f"Error fetching setup message for guild {guild_id}: {e}. Removing from setup_channels."
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
@@ -135,20 +146,24 @@ class Bot(commands.Bot):
         and returns a message string that the caller (commands) can display.
         """
         overwrites = {
+            guild.me: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_messages=True,
+                embed_links=True,
+            ),            
             guild.default_role: discord.PermissionOverwrite(
                 send_messages=True,
                 read_messages=True,
                 manage_messages=False,
                 embed_links=False,
             ),
-            guild.me: discord.PermissionOverwrite(
-                send_messages=True, manage_messages=True, read_message_history=True
-            ),
         }
 
         try:
             channel = await guild.create_text_channel(
-                name="🎵music-requests", overwrites=overwrites
+                name="🎧song-requests", overwrites=overwrites, slowmode_delay=2
             )
             embed = self.create_default_embed()
             view = PlayerControlView(self, None)
@@ -180,7 +195,7 @@ class Bot(commands.Bot):
 
             return f"Music channel created: {channel.mention}"
         except discord.Forbidden:
-            return "I need permissions to manage channels!"
+            return "I need the following permissions: `Connect`, `Embed Links`, `Manage Channels`, `Manage Messages`, `Manage Roles`, `Send Messages`, `Speak` and `View Channels`."
 
     def create_now_playing_embed(
         self, track: wavelink.Playable, original: wavelink.Playable | None
@@ -229,7 +244,7 @@ class Bot(commands.Bot):
         Return an error message if the user is not in a voice channel
         or is not in the same one as the bot. Otherwise None.
         """
-        member = guild.get_member(user.id)  # type: ignore
+        member = guild.get_member(user.id)
         if not member or not member.voice or not member.voice.channel:
             return "🚫 You must join a voice channel first."
 
@@ -330,16 +345,18 @@ class Bot(commands.Bot):
 
         return "DJ role removed. The music channel is now public for everyone."
 
-    async def handle_setup_play(self, message: discord.Message) -> str:
+    async def _delayed_delete(self, message: discord.Message, delay: float = 0.2):
+        """Deletes `message` after `delay` seconds, ignoring NotFound."""
+        await asyncio.sleep(delay)
         try:
             await message.delete()
         except discord.NotFound:
-            return "Message not found; nothing to delete."
+            pass
 
-        if err := await self.voice_precheck(message.author, message.guild):
-            return err
+    async def handle_setup_play(self, message: discord.Message) -> str:
+        asyncio.create_task(self._delayed_delete(message, delay=0.2))
 
-        await self.handle_play_action(
+        return await self.handle_play_action(
             message,
             message.guild,
             message.author,
@@ -347,6 +364,14 @@ class Bot(commands.Bot):
             message.content,
         )
 
+    async def _release_lock_after(self, lock: asyncio.Lock, delay: float):
+        await asyncio.sleep(delay)
+        if lock.locked():
+            lock.release()
+            logging.debug(f"Lock released after {delay} seconds.")
+
+    @ensure_voice
+    @debounce_action(delay=0.1)
     async def handle_play_action(
         self,
         interaction: discord.Interaction,
@@ -355,50 +380,61 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         query: str,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return err
+        search_task = asyncio.create_task(wavelink.Playable.search(query))
+
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
-                logging.error(f"Voice connection failed: {e}")
-                return "Failed to join your voice channel."
-
-        player.autoplay = wavelink.AutoPlayMode.partial
-        if not hasattr(player, "home"):
-            player.home = interaction.channel
-        elif player.home != interaction.channel:
-            return f"You can only play songs in {player.home.mention}, as the player has already started there."
+                logging.error("Voice connection failed: %s", e)
+                return Error("🚫 Could not join your voice channel.")
 
         try:
-            tracks = await wavelink.Playable.search(query)
-            if not tracks:
-                return "Could not find any tracks with that query."
-
-            if isinstance(tracks, wavelink.Playlist):
-                for track in tracks.tracks:
-                    track.requester = user
-                await player.queue.put_wait(tracks)
-                msg = f"Added playlist **`{tracks.name}`** to the queue."
-            else:
-                track = tracks[0]
-                track.requester = user
-                await player.queue.put_wait(track)
-                msg = f"Added **`{track}`** to the queue."
-
-            if not player.playing:
-                await player.play(
-                    player.queue.get(),
-                    volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
-                )
-            if not player.queue.is_empty:
-                view = PlayerControlView(self, player)
-                await self.update_setup_buttons(player.guild, view)
-            return msg
+            tracks = await search_task
         except Exception as e:
-            logging.error(f"Playback error: {e}")
-            return "Playback error occurred."
+            logging.error("Search failed: %s", e)
+            return Error("🔍 Could not search for that track.")
 
+        if not tracks:
+            return Error("❌ No results found for that query.")
+
+        player.autoplay = wavelink.AutoPlayMode.partial
+
+        if isinstance(tracks, wavelink.Playlist):
+            first = tracks.tracks[0]
+            first.requester = user
+            await player.queue.put_wait(first)
+            msg = f"Added playlist **`{tracks.name}`** to the queue."
+
+            async def _enqueue_rest():
+                for t in tracks.tracks[1:]:
+                    t.requester = user
+                    await player.queue.put_wait(t)
+
+            asyncio.create_task(_enqueue_rest())
+
+        else:
+            track = tracks[0]
+            track.requester = user
+            await player.queue.put_wait(track)
+            msg = f"Added **`{track}`** to the queue."
+
+        if not player.playing:
+            await asyncio.sleep(0.2)
+            next_track = await player.queue.get_wait()
+            await player.play(
+                next_track,
+                volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
+            )
+
+        asyncio.create_task(
+            self.update_setup_buttons(player.guild, PlayerControlView(self, player))
+        )
+
+        return Success(msg)
+
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_stop_action(
         self,
         interaction: discord.Interaction,
@@ -409,42 +445,54 @@ class Bot(commands.Bot):
         """
         Stops the current track, clears the queue, but stays connected.
         """
-        if err := await self.voice_precheck(user, guild):
-            return err
         if not player:
-            return "No active player."
+            return Error("No active player.")
 
         try:
             self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
             player.queue.clear()
-            await player.stop()
+            await player.skip()
 
             # on_wavelink_track_end in events.py updates the embed, no need to do it here
 
-            return "Playback stopped and queue cleared."
+            return Success("Playback stopped and queue cleared.")
         except Exception as e:
             logging.error(f"Stop error: {e}")
-            return "Failed to stop playback."
+            return Error("Failed to stop playback.")
 
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_skip_action(
         self,
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
         player: wavelink.Player,
+        count: int = 1,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return err
-        if not player:
-            return "No active player."
+        if not player or not player.playing:
+            return Error("No active player.")
+        if count - 1 > player.queue.count:
+            return Error(
+                f"Cannot skip {count} tracks; only {player.queue.count} in the queue."
+            )
+        if count > 1:
+            for _ in range(count - 1):
+                try:
+                    player.queue.delete(0)
+                except IndexError:
+                    break
+
         try:
             self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
             await player.skip(force=True)
-            return "Skipped the current track."
+            return Success(f"⏭️ Skipped {count} track{'s' if count>1 else ''}.")
         except Exception as e:
-            logging.error(f"Skip error: {e}")
-            return "Failed to skip the track."
+            logging.error("Skip error", exc_info=e)
+            return Error("Failed to skip.")
 
+    @ensure_voice
+    @debounce_action(delay=1)
     async def handle_toggle_action(
         self,
         interaction: discord.Interaction,
@@ -453,19 +501,19 @@ class Bot(commands.Bot):
         player: wavelink.Player,
     ) -> str:
         if not player:
-            return "No active player."
+            return Error("No active player.")
 
         new_pause_state = not player.paused
         try:
             await player.pause(new_pause_state)
         except Exception as e:
             logging.error(f"Toggle error: {e}")
-            return "Failed to toggle pause/resume."
+            return Error("Failed to toggle pause/resume.")
 
         action = "Paused" if new_pause_state else "Resumed"
         self.set_latest_action(f"{action} by {user.display_name}")
         await self.update_setup_embed(guild, player)
-        return f"{action} the current track."
+        return Success(f"{action} the current track.")
 
     async def handle_disconnect_action(
         self,
@@ -474,11 +522,12 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if not player:
-            return "No active player."
+        if not guild.voice_client:
+            return Error("🚫 I’m not connected to any voice channel.")
         try:
             self.set_latest_action(f"Disconnected by {user.display_name}")
             await player.disconnect()
+
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
             return "Failed to disconnect the player."
@@ -498,8 +547,10 @@ class Bot(commands.Bot):
                 ],
             ),
         )
+
         return "Disconnected the player."
 
+    @ensure_voice
     async def handle_shuffle_action(
         self,
         interaction: discord.Interaction,
@@ -507,19 +558,62 @@ class Bot(commands.Bot):
         user: discord.User,
         player: wavelink.Player,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return err
         if not player or player.queue.is_empty:
-            return "No active player or the queue is empty."
+            return Error("No active player or the queue is empty.")
         try:
             player.queue.shuffle()
             self.set_latest_action(f"Shuffled by {user.display_name}")
             await self.update_setup_embed(guild, player)
-            return "The queue has been shuffled!"
+            return Success("The queue has been shuffled!")
         except Exception as e:
             logging.error(f"Shuffle error: {e}")
-            return "Failed to shuffle the queue."
+            return Error("Failed to shuffle the queue.")
 
+    async def handle_queue_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+        page_size: int,
+    ):
+        if not player or not player.queue:
+            return Error("The queue is empty.")
+
+        tracks = player.queue.copy()
+        view = QueueView(interaction.user, tracks, page_size)
+        embed = view.current_embed()
+        return embed, view
+
+    @ensure_voice
+    @debounce_action(delay=0.5)
+    async def handle_forward_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+        seconds: int,
+    ) -> str:
+        if not player or not player.playing:
+            return Error("No track is currently playing.")
+
+        new_pos = player.position + (seconds * 1000)
+        if new_pos >= player.current.length:
+            return Error("Cannot forward beyond the end of the track.")
+
+        try:
+            await player.seek(new_pos)
+            self.set_latest_action(
+                f"Forwarded {seconds}s by {user.display_name}", persist=True
+            )
+            await self.update_setup_embed(guild, player)
+            return Success(f"⏩ Forwarded {seconds} seconds.")
+        except Exception as e:
+            logging.error(f"Forward error: {e}")
+            return Error("Failed to forward playback.")
+
+    @ensure_voice
     async def handle_nightcore_action(
         self,
         interaction: discord.Interaction,
@@ -528,14 +622,8 @@ class Bot(commands.Bot):
         player: wavelink.Player,
         mode: int,
     ) -> str:
-        if err := await self.voice_precheck(user, guild):
-            return err
         if not player:
-            try:
-                player = await user.voice.channel.connect(cls=wavelink.Player)
-            except Exception as e:
-                logging.error(f"Nightcore connection failed: {e}")
-                return "Failed to join your voice channel."
+            return Error("No active player.")
 
         filters = player.filters
         try:
@@ -550,10 +638,67 @@ class Bot(commands.Bot):
 
             await player.set_filters(filters)
             await self.update_setup_embed(guild, player)
-            return msg
+            return Success(msg)
         except Exception as e:
             logging.error(f"Filter update error: {e}")
-            return "Failed to update filters."
+            return Error("Failed to update filters.")
+
+    async def handle_stay_247_action(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        user: discord.User,
+        player: wavelink.Player,
+    ) -> str:
+        setup_data = self.setup_channels.setdefault(guild.id, {})
+
+        current = setup_data.get(SetupChannelKeys.STAY_247, False)
+        new_value = not current
+        setup_data[SetupChannelKeys.STAY_247] = new_value
+
+        save_setup_channels(self.setup_channels)
+
+        await self.check_voice_channel_empty_and_leave(user)
+
+        status = "enabled" if new_value else "disabled"
+        return Success(f"24/7 mode {status}!")
+
+    async def check_voice_channel_empty_and_leave(self, member: discord.Member):
+        vc = member.guild.voice_client
+        if not vc or not vc.channel:
+            return
+
+        if member.bot:
+            return
+
+        non_bots = [m for m in vc.channel.members if not m.bot]
+        if non_bots:
+            return
+
+        guild = member.guild
+        stay = self.setup_channels.get(guild.id, {}).get(
+            SetupChannelKeys.STAY_247, False
+        )
+
+        if not stay:
+            player: wavelink.Player = cast(wavelink.Player, vc)
+
+            await self.update_setup_embed(
+                player.guild,
+                player,
+                embed=self.create_default_embed(),
+                view=PlayerControlView(
+                    self,
+                    player,
+                    disabled_buttons=[
+                        ControlButton.STOP,
+                        ControlButton.PAUSE_RESUME,
+                        ControlButton.SKIP,
+                        ControlButton.SHUFFLE,
+                    ],
+                ),
+            )
+            await vc.disconnect()
 
     async def update_setup_embed(
         self,
@@ -574,7 +719,7 @@ class Bot(commands.Bot):
         message_id = setup_data.get(SetupChannelKeys.MESSAGE)
         channel = guild.get_channel(channel_id)
         if channel is None:
-            logging.error("Channel %s not found for guild %s", channel_id, guild.id)
+            logging.warning("Channel %s not found for guild %s", channel_id, guild.id)
             return
 
         embed = await self._fetch_or_create_embed(channel, message_id, embed)
@@ -651,8 +796,7 @@ class Bot(commands.Bot):
                 self.setup_message_cache[guild_id] = new_message
                 return new_message.id, False, new_message
             else:
-                await message.edit(embed=embed, view=view)
-                new_message = await channel.fetch_message(message_id)
+                new_message = await message.edit(embed=embed, view=view)
                 self.setup_message_cache[guild_id] = new_message
                 return message_id, True, new_message
         except discord.NotFound:
@@ -681,7 +825,7 @@ class Bot(commands.Bot):
 
         channel = guild.get_channel(channel_id)
         if channel is None:
-            logging.error(f"Channel {channel_id} not found in guild {guild.id}")
+            logging.warning(f"Channel {channel_id} not found in guild {guild.id}")
             return
 
         msg = self.setup_message_cache.get(guild.id)
@@ -698,3 +842,58 @@ class Bot(commands.Bot):
             self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
         except Exception as e:
             logging.error(f"Failed to update buttons on setup message: {e}")
+
+
+class QueueView(discord.ui.View):
+    def __init__(
+        self, user: discord.User, tracks: List[wavelink.Playable], page_size: int = 15
+    ):
+        super().__init__(timeout=120)
+        self.user = user
+        self.tracks = tracks
+
+        # --- PRECOMPUTE ALL PAGES AT INIT TIME ---
+        self.embeds: List[discord.Embed] = []
+        total_pages = (len(tracks) - 1) // page_size + 1
+        for page in range(total_pages):
+            start = page * page_size
+            chunk = tracks[start : start + page_size]
+
+            # build each page’s embed
+            lines = []
+            for i, track in enumerate(chunk, start=start + 1):
+                dur = f"{track.length//60000}:{(track.length%60000)//1000:02}"
+                lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
+
+            desc = (
+                f"Page {page+1}/{total_pages}\n"
+                f"Total tracks: {len(tracks)}\n\n" + "\n".join(lines)
+            )
+            embed = discord.Embed(
+                title="Queue", description=desc, color=discord.Color.purple()
+            )
+            self.embeds.append(embed)
+
+        # state
+        self.page = 0
+        self.prev.disabled = True
+        self.next.disabled = len(self.embeds) <= 1
+
+    def current_embed(self) -> discord.Embed:
+        return self.embeds[self.page]
+
+    # initial message will call .current_embed()
+
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary)
+    async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        self.prev.disabled = self.page == 0
+        self.next.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        self.next.disabled = self.page >= len(self.embeds) - 1
+        self.prev.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)

@@ -8,6 +8,7 @@ import wavelink
 from discord.ext import commands
 
 from cogs.buttons import ControlButton, PlayerControlView
+from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -23,6 +24,16 @@ class EventHandlers(commands.Cog):
         self.bot: Bot = bot
 
     @commands.Cog.listener()
+    async def on_connect(self):
+        """
+        Called when the bot is connected to Discord.
+        Sets up the bot's presence and loads the setup message cache.
+        """
+        logging.info("Connecting to Discord...")
+        await self.bot.wait_until_ready()
+        logging.info("Connected to Discord.")
+
+    @commands.Cog.listener()
     async def on_ready(self):
         """
         Called when the bot has connected to Discord.
@@ -32,8 +43,9 @@ class EventHandlers(commands.Cog):
         activity = discord.Activity(
             type=discord.ActivityType.listening, name="your requests ♫"
         )
-        await self.bot.change_presence(status=discord.Status.online, activity=activity)
         await self.bot.load_setup_message_cache()
+        await self.bot.change_presence(status=discord.Status.online, activity=activity)
+        logging.info("Bot is online & can be used ♫")
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
@@ -102,18 +114,6 @@ class EventHandlers(commands.Cog):
                     logging.error("Error updating embed on track end: %s", e)
 
     @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        """
-        Called when an interaction is received.
-        Defers the response for component interactions if not already done.
-
-        :param interaction: The interaction instance from Discord.
-        """
-        if interaction.type == discord.InteractionType.component:
-            if not interaction.response.is_done():
-                await interaction.response.defer()
-
-    @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """
         Called when a message is sent in a guild.
@@ -128,8 +128,47 @@ class EventHandlers(commands.Cog):
         if message.channel.id != setup_data.get("channel"):
             return
 
-        if err := await self.bot.handle_setup_play(message):
-            await message.channel.send(err, delete_after=5)
+        msg = await self.bot.handle_setup_play(message)
+        if isinstance(msg, Error):
+            await message.channel.send(msg, delete_after=5)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """
+        Called when a voice state is updated.
+        This includes joining, leaving, or moving between voice channels.
+        """
+        await self.bot.check_voice_channel_empty_and_leave(member)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(
+        self, payload: wavelink.TrackExceptionEventPayload
+    ):
+        """
+        Fired when a track errors during playback.
+        For live streams that die, we auto-skip to the next track.
+        """
+        player = payload.player
+        logging.warning(
+            "Track exception on guild %s: %s — skipping",
+            player.guild.id,
+            payload.exception,
+        )
+        await player.skip()
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
+        """
+        Fired when Lavalink detects no frames for a while.
+        Treat it the same as an exception.
+        """
+        player = payload.player
+        logging.warning(
+            "Track stuck on guild %s at position %sms — skipping",
+            player.guild.id,
+            payload.threshold,
+        )
+        await player.skip()
 
 
 async def setup(bot: commands.Bot):

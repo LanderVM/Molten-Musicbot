@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import discord
 import wavelink
@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from enums import SetupChannelKeys
+from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -66,6 +67,9 @@ class MusicCommands(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setup_create(self, interaction: discord.Interaction):
         msg = await self.bot.create_setup_channel(interaction.guild)
+        if isinstance(msg, Error):
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
         await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(name="play", description="Play a song with the given query.")
@@ -88,10 +92,15 @@ class MusicCommands(commands.Cog):
 
     @app_commands.command(name="skip", description="Skip the current song.")
     @app_commands.check(dj_role_required)
-    async def skip(self, interaction: discord.Interaction):
+    @app_commands.describe(count="How many tracks to skip (default = 1)")
+    async def skip(
+        self,
+        interaction: discord.Interaction,
+        count: Optional[app_commands.Range[int, 1, None]] = 1,
+    ):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_skip_action(
-            interaction, interaction.guild, interaction.user, player
+            interaction, interaction.guild, interaction.user, player, count
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
@@ -123,6 +132,42 @@ class MusicCommands(commands.Cog):
         player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
         msg = await self.bot.handle_shuffle_action(
             interaction, interaction.guild, interaction.user, player
+        )
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+
+    @app_commands.command(name="queue", description="Display the current queue.")
+    @app_commands.check(dj_role_required)
+    @app_commands.describe(page_size="Number of songs to display per page [10-25]")
+    async def queue(
+        self,
+        interaction: discord.Interaction,
+        page_size: app_commands.Range[int, 10, 25] = 20,
+    ):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        result = await self.bot.handle_queue_action(
+            interaction, interaction.guild, interaction.user, player, page_size
+        )
+        if isinstance(result, Error):
+            await interaction.response.send_message(result, ephemeral=True)
+            return
+        embed, view = result
+        await interaction.response.send_message(
+            embed=embed, view=view, ephemeral=True, delete_after=120
+        )
+
+    @app_commands.command(
+        name="forward", description="Forward song by a given number of seconds"
+    )
+    @app_commands.check(dj_role_required)
+    @app_commands.describe(seconds="Number of seconds to skip forward")
+    async def forward(
+        self,
+        interaction: discord.Interaction,
+        seconds: app_commands.Range[int, 1, None],
+    ):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        msg = await self.bot.handle_forward_action(
+            interaction, interaction.guild, interaction.user, player, seconds
         )
         await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
@@ -166,6 +211,17 @@ class MusicCommands(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
 
     @app_commands.command(
+        name="247", description="Toggle 24/7 mode for the music channel."
+    )
+    @app_commands.check(dj_role_required)
+    async def enable_247(self, interaction: discord.Interaction):
+        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        msg = await self.bot.handle_stay_247_action(
+            interaction, interaction.guild, interaction.user, player
+        )
+        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+
+    @app_commands.command(
         name="help",
         description="Get information on how to set up the music bot and usage instructions.",
     )
@@ -177,14 +233,17 @@ To set up a music request channel in your server, use the `/setup` command. This
         
 Once the channel is created, you can:
 - Use the `/play <song name>` command to play a song.
-- Use the `/skip` command to skip the current song.
+- Use the `/skip [count]` command to skip the current song.
 - Use the `/toggle` command to pause or resume the song.
 - Use the `/stop` command to stop playback and clear the queue.
 - Use the `/shuffle` command to shuffle the current queue.
+- Use the `/247` command to enable or disable 24/7 mode for the music channel.
 - Use the `/nightcore` command to toggle the Nightcore effect on or off.
 - Use the `/create_dj` command to create a DJ role that can manage the music channel and commands.
 - Use the `/remove_dj` command to remove the DJ role and make the channel public.
 - Use the `/disconnect` command to disconnect the player and stop playback.
+- Use the `/forward <seconds>` command to skip forward by a given number of seconds.
+- Use the `/queue` command to display the current queue of songs.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
 

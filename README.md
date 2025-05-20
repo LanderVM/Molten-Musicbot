@@ -97,6 +97,17 @@ In your Discord server, you can use the following commands to control the bot:
 
 ---
 
+## Permissions
+
+This bot requires the following permissions for full functionality: `Connect`, `Embed Links`, `Manage Channels`, `Manage Messages`, `Manage Roles`, `Send Messages`, `Speak`, and `View Channels`.
+
+> **Note:**
+>
+> - `Manage Channels` is only needed when running the `/setup` command.
+> - `Manage Roles` is only needed for the `/create_dj` and `/remove_dj` commands.
+>
+> After using those commands, you can remove those permissions if you’d like.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
