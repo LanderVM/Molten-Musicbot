@@ -8,6 +8,7 @@ import wavelink
 from discord.ext import commands
 
 from cogs.buttons import ControlButton, PlayerControlView
+from dashboard import notify_dashboard_guild, start_dashboard
 from utils import Error
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ class EventHandlers(commands.Cog):
         )
         await self.bot.load_setup_message_cache()
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
+        start_dashboard(self.bot)
         logging.info("Bot is online & can be used ♫")
 
     @commands.Cog.listener()
@@ -68,6 +70,7 @@ class EventHandlers(commands.Cog):
         """
         player = payload.player
         track = payload.track
+        notify_dashboard_guild(player.guild.id, track)
 
         # Clear temporary latest action if not persistent
         if self.bot.latest_action and not self.bot.latest_action.get("persist", False):
@@ -89,6 +92,7 @@ class EventHandlers(commands.Cog):
         player = payload.player
         if not player:
             return
+        notify_dashboard_guild(player.guild.id)
 
         if not hasattr(player, "queue") or player.queue.is_empty:
             setup_data = self.bot.setup_channels.get(player.guild.id, {})
@@ -133,12 +137,13 @@ class EventHandlers(commands.Cog):
             await message.channel.send(msg, delete_after=5)
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
+    async def on_voice_state_update(self, member: discord.Member, before, after):
         """
         Called when a voice state is updated.
         This includes joining, leaving, or moving between voice channels.
         """
         await self.bot.check_voice_channel_empty_and_leave(member)
+        notify_dashboard_guild(member.guild.id, preserve_current=True)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(
