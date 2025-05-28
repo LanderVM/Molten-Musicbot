@@ -138,7 +138,11 @@ class EventHandlers(commands.Cog):
         Called when a voice state is updated.
         This includes joining, leaving, or moving between voice channels.
         """
-        await self.bot.check_voice_channel_empty_and_leave(member)
+        if member.bot:
+            return
+
+        if before.channel is not None and after.channel is None:
+            await self.bot.check_voice_channel_empty_and_leave(member)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(
