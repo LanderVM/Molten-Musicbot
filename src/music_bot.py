@@ -381,7 +381,7 @@ class Bot(commands.Bot):
         query: str,
     ) -> str:
         search_task = asyncio.create_task(wavelink.Playable.search(query))
-
+        logging.info("Handle_play_action called")
         if not player:
             try:
                 player = await user.voice.channel.connect(cls=wavelink.Player)
@@ -427,9 +427,15 @@ class Bot(commands.Bot):
                 volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
             )
 
-        asyncio.create_task(
-            self.update_setup_buttons(player.guild, PlayerControlView(self, player))
-        )
+            logging.info("Handle_play_action Update embed")
+            view = PlayerControlView(self, player)
+            embed = self.create_now_playing_embed(next_track, None)
+            await self.update_setup_embed(
+                guild=player.guild,
+                player=player,
+                embed=embed,
+                view=view
+            )
 
         return Success(msg)
 

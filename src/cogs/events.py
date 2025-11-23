@@ -66,6 +66,7 @@ class EventHandlers(commands.Cog):
 
         :param payload: The event payload containing track and player information.
         """
+        logging.info("on_wavelink_track_start event called")
         player = payload.player
         track = payload.track
 
@@ -73,6 +74,7 @@ class EventHandlers(commands.Cog):
         if self.bot.latest_action and not self.bot.latest_action.get("persist", False):
             self.bot.latest_action = None
 
+        logging.info("on_wavelink_track_start Update embed")
         embed = self.bot.create_now_playing_embed(track, payload.original)
         await self.bot.update_setup_embed(
             guild=player.guild, player=player, embed=embed
