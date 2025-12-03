@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  molten-musicbot:
+    build: .
+    container_name: molten-musicbot
+    environment:
+      LAVALINK_HOST: host.docker.internal # update this if your Lavalink server is not running on the host machine
+      LAVALINK_PORT: 2333
+      LAVALINK_PASSWORD: your_password_here
+      SSL_ENABLED: "false" # set to "true" if using SSL for Lavalink
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data

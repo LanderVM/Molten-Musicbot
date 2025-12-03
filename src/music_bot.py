@@ -19,7 +19,7 @@ from utils import (
     format_duration,
     load_setup_channels,
     remove_setup_channel,
-    save_setup_channels,
+    save_setup_channels_async,
 )
 
 load_dotenv()
@@ -134,7 +134,7 @@ class Bot(commands.Bot):
                         f"DJ role with ID {role_id} not found in guild {guild_id}. Removing from setup_channels."
                     )
                     del data[SetupChannelKeys.DJ_ROLE]
-                    save_setup_channels(self.setup_channels)
+                    asyncio.create_task(save_setup_channels_async(self.setup_channels))
             if delay:
                 await asyncio.sleep(delay)
 
@@ -172,7 +172,7 @@ class Bot(commands.Bot):
             data[SetupChannelKeys.CHANNEL] = channel.id
             data[SetupChannelKeys.MESSAGE] = status_message.id
             self.setup_channels[guild.id] = data
-            save_setup_channels(self.setup_channels)
+            asyncio.create_task(save_setup_channels_async(self.setup_channels))
             self.setup_message_cache[guild.id] = status_message
 
             dj_role = self.dj_roles.get(guild.id)
@@ -279,7 +279,7 @@ class Bot(commands.Bot):
 
         setup_data[SetupChannelKeys.DJ_ROLE] = dj_role.id
         self.setup_channels[guild.id] = setup_data
-        save_setup_channels(self.setup_channels)
+        asyncio.create_task(save_setup_channels_async(self.setup_channels))
         self.dj_roles[guild.id] = dj_role
 
         channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
@@ -324,7 +324,7 @@ class Bot(commands.Bot):
         if SetupChannelKeys.DJ_ROLE in setup_data:
             del setup_data[SetupChannelKeys.DJ_ROLE]
             self.setup_channels[guild.id] = setup_data
-            save_setup_channels(self.setup_channels)
+            asyncio.create_task(save_setup_channels_async(self.setup_channels))
 
         channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
         if channel_id:
@@ -656,7 +656,7 @@ class Bot(commands.Bot):
         new_value = not current
         setup_data[SetupChannelKeys.STAY_247] = new_value
 
-        save_setup_channels(self.setup_channels)
+        asyncio.create_task(save_setup_channels_async(self.setup_channels))
 
         await self.check_voice_channel_empty_and_leave(user)
 
@@ -728,7 +728,7 @@ class Bot(commands.Bot):
             await self._update_or_replace_message(channel, message_id, embed, view)
         )
         setup_data[SetupChannelKeys.MESSAGE] = new_message_id
-        save_setup_channels(self.setup_channels)
+        asyncio.create_task(save_setup_channels_async(self.setup_channels))
 
         if (
             edited
@@ -838,8 +838,8 @@ class Bot(commands.Bot):
                 return
 
         try:
-            await msg.edit(view=view)
-            self.setup_message_cache[guild.id] = await channel.fetch_message(message_id)
+            new_msg = await msg.edit(view=view)
+            self.setup_message_cache[guild.id] = new_msg
         except Exception as e:
             logging.error(f"Failed to update buttons on setup message: {e}")
 

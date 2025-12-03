@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 import os
 from dataclasses import dataclass
 
-SETUP_CHANNELS_FILE = "setup_channels.json"
+SETUP_CHANNELS_FILE = "data/setup_channels.json"
+os.makedirs(os.path.dirname(SETUP_CHANNELS_FILE), exist_ok=True)
 
 
 def load_setup_channels() -> dict:
@@ -25,18 +27,19 @@ def load_setup_channels() -> dict:
         return {}
 
 
-def save_setup_channels(data: dict) -> None:
+def save_setup_channels_sync(data: dict) -> None:
     """
     Saves the setup channels dict to a JSON file.
 
     Args:
         data: The dict to save.
     """
-    try:
-        with open(SETUP_CHANNELS_FILE, "w") as f:
-            json.dump(data, f)
-    except Exception as e:
-        logging.error(f"Failed to save setup channels: {e}")
+    with open(SETUP_CHANNELS_FILE, "w") as f:
+        json.dump(data, f)
+
+
+async def save_setup_channels_async(data: dict) -> None:
+    await asyncio.to_thread(save_setup_channels_sync, data)
 
 
 def remove_setup_channel(guild_id: int, data: dict) -> None:
@@ -50,7 +53,7 @@ def remove_setup_channel(guild_id: int, data: dict) -> None:
     """
     if guild_id in data:
         del data[guild_id]
-        save_setup_channels(data)
+        asyncio.create_task(save_setup_channels_async(data))
 
 
 def format_duration(ms: int) -> str:
