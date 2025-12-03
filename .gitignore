@@ -174,3 +174,7 @@ cython_debug/
 .pypirc
 
 *.json
+
+lavalink/logs/
+lavalink/plugins/
+lavalink/*.jar
