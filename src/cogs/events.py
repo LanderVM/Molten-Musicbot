@@ -40,8 +40,8 @@ class EventHandlers(commands.Cog):
         Sets the bot's presence and logs the successful login.
         """
         logging.info("Logged in: %s | %s", self.bot.user, self.bot.user.id)
-        activity = discord.Activity(
-            type=discord.ActivityType.listening, name="your requests ♫"
+        activity = discord.Game(
+            name="Playing your requests ♫"
         )
         await self.bot.load_setup_message_cache()
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
