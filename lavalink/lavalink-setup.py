@@ -4,6 +4,8 @@ import requests
 import signal
 from pathlib import Path
 
+# This script is mainly used for development purposes to easily setup and run Lavalink.
+
 SCRIPT_DIR = Path(__file__).parent.resolve()
 LAVALINK_DIR = SCRIPT_DIR
 JAR_NAME = "Lavalink.jar"
