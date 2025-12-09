@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  gluetun-lavalink:
+    image: qmcgaw/gluetun
+    container_name: gluetun-lavalink
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "2333:2333/tcp"
+    volumes:
+      - /yourpath/gluetun:/gluetun
+    environment: # configure your vpn settings here! More info at https://github.com/qdm12/gluetun-wiki?tab=readme-ov-file#table-of-contents
+      - VPN_SERVICE_PROVIDER= #vpn provider name            | FILL THIS IN!
+      - VPN_TYPE=wireguard #vpn type                        | FILL THIS IN!
+      - SERVER_HOSTNAMES= #server hostname                  | FILL THIS IN!
+      - WIREGUARD_PRIVATE_KEY= #your wireguard private key  | FILL THIS IN!
+      - WIREGUARD_ADDRESSES= #your wireguard address        | FILL THIS IN!
+      - TZ=Europe/Brussels #your timezone
+      - UPDATER_PERIOD=24h
+    healthcheck:
+      test: ["CMD-SHELL", "sleep 20 && exit 0"] # Neccessary to wait for the VPN to be ready before starting lavalink, otherwise VPN connection issues may occur!
+      interval: 5s
+      timeout: 30s
+      retries: 1
+    restart: unless-stopped
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4-alpine
+    container_name: lavalink
+    restart: unless-stopped
+    environment:
+      # set Java options here (6GB heap size)
+      - _JAVA_OPTIONS=-Xmx6G
+      # set lavalink server port
+      - SERVER_PORT=2333
+      # set password for lavalink
+      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml
+      - ./lavalink/plugins/:/opt/Lavalink/plugins/
+    # Use this only when using gluetun vpn
+    network_mode: "service:gluetun-lavalink"
+    depends_on:
+      - gluetun-lavalink
+
+  ejs-api:
+    # Uncomment to build locally (not supported right now)
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    image: ghcr.io/kikkia/yt-cipher:master
+    container_name: ejs_signature_api
+    ports:
+      - "8001:8001"
+    environment:
+      - API_TOKEN=your_secret_password
+    restart: unless-stopped
+
+  molten-musicbot:
+    build: .
+    image: molten-musicbot:latest
+    container_name: molten-musicbot
+    environment:
+      LAVALINK_HOST: gluetun-lavalink
+      LAVALINK_PORT: 2333
+      LAVALINK_PASSWORD: youshallnotpass
+      SSL_ENABLED: "false"
+      LOG_LEVEL: "INFO" # INFO or DEBUG
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data

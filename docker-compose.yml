@@ -17,7 +17,7 @@ services:
       - ./lavalink/plugins/:/opt/Lavalink/plugins/
 
   ejs-api:
-    # Uncomment to build locally
+    # Uncomment to build locally (not supported right now)
     # build:
     #   context: .
     #   dockerfile: Dockerfile
