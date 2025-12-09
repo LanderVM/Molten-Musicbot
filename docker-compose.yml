@@ -16,6 +16,19 @@ services:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml
       - ./lavalink/plugins/:/opt/Lavalink/plugins/
 
+  ejs-api:
+    # Uncomment to build locally
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    image: ghcr.io/kikkia/yt-cipher:master
+    container_name: ejs_signature_api
+    ports:
+      - "8001:8001"
+    environment:
+      - API_TOKEN=your_secret_password
+    restart: unless-stopped
+
   molten-musicbot:
     build: .
     image: molten-musicbot:latest
@@ -25,7 +38,7 @@ services:
       LAVALINK_PORT: 2333
       LAVALINK_PASSWORD: youshallnotpass
       SSL_ENABLED: "false"
-      LOG_LEVEL: "DEBUG"
+      LOG_LEVEL: "INFO" # INFO or DEBUG
     restart: unless-stopped
     volumes:
       - ./data:/app/data
