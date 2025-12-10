@@ -4,6 +4,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import List, cast
+from aiohttp.client_exceptions import ClientConnectorError
 
 import discord
 import wavelink
@@ -73,8 +74,10 @@ class Bot(commands.Bot):
         await wavelink.Pool.connect(
             nodes=[
                 wavelink.Node(
+                    identifier="LavalinkNode",
                     uri=f"{protocol}{os.getenv(EnvironmentKeys.LAVALINK_HOST)}:{os.getenv(EnvironmentKeys.LAVALINK_PORT)}",
                     password=os.getenv(EnvironmentKeys.LAVALINK_PASSWORD),
+                    retries=3,
                 )
             ],
             client=self,
@@ -353,6 +356,20 @@ class Bot(commands.Bot):
         except discord.NotFound:
             pass
 
+    async def safe_player_action(self, coro_factory, retries: int = 6, delay: float = 1.5):
+        """
+        Run coroutine returned by coro_factory() and retry on connection errors.
+        coro_factory should return the coroutine (e.g. lambda: player.play(track))
+        """
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                return await coro_factory()
+            except (ClientConnectorError, ConnectionRefusedError) as exc:
+                last_exc = exc
+                await asyncio.sleep(delay * (1 + attempt * 0.5))
+        raise last_exc
+
     async def handle_setup_play(self, message: discord.Message) -> str:
         asyncio.create_task(self._delayed_delete(message, delay=0.2))
 
@@ -369,6 +386,44 @@ class Bot(commands.Bot):
         if lock.locked():
             lock.release()
             logging.debug(f"Lock released after {delay} seconds.")
+
+    async def _recreate_all_players(self):
+        """
+        For each guild where the bot is still in a voice channel, gracefully
+        disconnect and reconnect so Wavelink creates a fresh server-side player.
+        """
+        await asyncio.sleep(1)  # give node a short moment to settle
+        for guild in list(self.bot.guilds):
+            vc = guild.voice_client
+            if not vc or not vc.channel:
+                continue
+
+            try:
+                # preserve in-memory queue if present
+                saved_queue = []
+                try:
+                    saved_queue = [t for t in vc.queue.copy()]
+                except Exception:
+                    # queue may not be available; ignore if so
+                    saved_queue = []
+
+                logging.info("Recreating player for guild %s (channel=%s) saved_queue=%s", guild.id, vc.channel.id if vc.channel else None, len(saved_queue))
+
+                # disconnect the existing (stale) player
+                await vc.disconnect()
+
+                # reconnect to same channel to create a new player on Lavalink
+                new_player = await guild.voice_client or await guild.get_channel(vc.channel.id).connect(cls=wavelink.Player)
+                # requeue saved tracks
+                for t in saved_queue:
+                    await new_player.queue.put_wait(t)
+
+                # optionally start playing the first track if any
+                if not new_player.playing and not new_player.queue.is_empty:
+                    next_track = await new_player.queue.get_wait()
+                    await self.bot.safe_player_action(lambda: new_player.play(next_track, volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME))))
+            except Exception as e:
+                logging.exception("Failed to recreate player for guild %s: %s", guild.id, e)
 
     @ensure_voice
     @debounce_action(delay=0.1)
@@ -422,10 +477,7 @@ class Bot(commands.Bot):
         if not player.playing:
             await asyncio.sleep(0.2)
             next_track = await player.queue.get_wait()
-            await player.play(
-                next_track,
-                volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
-            )
+            await self.safe_player_action(lambda: player.play(next_track, volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME))))
 
         asyncio.create_task(
             self.update_setup_buttons(player.guild, PlayerControlView(self, player))

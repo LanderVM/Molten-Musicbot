@@ -6,18 +6,24 @@ Molten is a lightweight music bot built on top of Lavalink v4, designed to provi
 
 ![Molten-Example-Small](https://github.com/user-attachments/assets/19ea1dd8-efcb-4b5d-b28e-e002042e8171)
 
-## Prerequisites
-
-Before you begin, ensure you have the following installed on your machine:
-
-- [Python 3.11 or later](https://www.python.org/downloads/)
-- Lavalink **V4** server. You can [host your own Lavalink V4](https://lavalink.dev/getting-started) or [use a public one](https://lavalink.darrennathanael.com/NoSSL/lavalink-without-ssl/).
-
 ---
 
 ## Getting Started
 
-Follow these steps to set up Molten:
+Molten Musicbot supports two ways to run the bot:
+
+- **[Docker Setup](#docker-setup-recommended-for-beginners)** → easiest, includes Lavalink automatically
+- **[Manual Setup](#manual-setup-recommended-for-advanced-users)** → for users who already host their own Lavalink
+
+---
+
+## Docker Setup (Recommended for Beginners)
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed on your machine:
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ### 1. Clone the repository
 
@@ -28,19 +34,11 @@ git clone https://github.com/LanderVM/Molten-Musicbot.git
 cd Molten-Musicbot
 ```
 
-### 2. Install Required Packages
+### 2. Set Up Environment Variables
 
-Now, install the required Python packages using **pip**. Run the following command:
+Copy the `.env.example` file and rename it to `.env`.
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Set Up Environment Variables
-
-Copy the `.env.example` file and rename it to `.env`. This file contains the environment variables used by the bot.
-
-### 4. Find Your Discord Bot Token
+### 3. Find Your Discord Bot Token
 
 To run the bot, you’ll need a Discord bot token. Follow these steps to get your bot token:
 
@@ -54,22 +52,60 @@ To run the bot, you’ll need a Discord bot token. Follow these steps to get you
 6. In the Installation section, make sure to add the bot to your server with the following settings and use the Install Link to invite the bot to your server:
    ![DiscordInstallation](https://github.com/user-attachments/assets/5f1dd3f6-e8a4-45dc-8dfe-e25a3615f9b1)
 
-### 5. Edit `.env` File
+### 4. Edit `.env` File
 
-Open the `.env` file in a text editor and add your Discord bot token. The file should look something like this:
+Open the `.env` file in a text editor and add your Discord bot token. Update the DISCORD_BOT_TOKEN to look something like this:
+
+```env
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+```
+
+Replace `your_discord_bot_token_here` with the bot token you obtained in step 3.
+
+### 5. Run the Bot with Docker
+
+```bash
+docker-compose up -d
+```
+
+The bot and Lavalink will start automatically.
+
+---
+
+## Manual Setup (Recommended for Advanced Users)
+
+Use this method if you already have a **Lavalink V4 server** or want to run the bot without Docker.
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed on your machine:
+
+- [Python 3.11 or later](https://www.python.org/downloads/)
+- Lavalink **V4** server. You can [host your own Lavalink V4](https://lavalink.dev/getting-started) or [use a public one](https://lavalink.darrennathanael.com/NoSSL/lavalink-without-ssl/).
+
+### [Run steps 1-3 from Docker Setup first.](#docker-setup-recommended-for-beginners)
+
+### 4. Edit `.env` File
+
+Open the `.env` file in a text editor and add your Discord bot token. Update the following variables:
 
 ```env
 DISCORD_BOT_TOKEN=your_discord_bot_token_here
 LAVALINK_HOST=localhost
 LAVALINK_PORT=2333
 LAVALINK_PASSWORD=youshallnotpass
+SSL_ENABLED=false
 ```
 
-Replace `your_discord_bot_token_here` with the bot token you obtained in step 4. Make sure to set the Lavalink server details correctly.
+Replace `your_discord_bot_token_here` with the bot token you obtained in step 3. Make sure to set the Lavalink server details correctly.
+
+### 5. Install Required Packages
+
+```bash
+pip install -r requirements.txt
+```
 
 ### 6. Run the Bot
-
-Finally, run the bot using the following command:
 
 ```bash
 python src/main.py
@@ -79,7 +115,7 @@ If everything is set up correctly, your bot should be online and ready to start 
 
 ---
 
-### 7. Usage
+## Usage
 
 In your Discord server, you can use the following commands to control the bot:
 

@@ -40,8 +40,8 @@ class EventHandlers(commands.Cog):
         Sets the bot's presence and logs the successful login.
         """
         logging.info("Logged in: %s | %s", self.bot.user, self.bot.user.id)
-        activity = discord.Activity(
-            type=discord.ActivityType.listening, name="your requests ♫"
+        activity = discord.Game(
+            name="Playing your requests ♫"
         )
         await self.bot.load_setup_message_cache()
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
@@ -49,14 +49,24 @@ class EventHandlers(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
-        """
-        Called when a wavelink node connects.
+        node = payload.node
+        logging.info("Node ready. resumed=%s session=%s", payload.resumed, payload.session_id)
 
-        :param payload: The event payload containing node information.
-        """
-        logging.info(
-            "Wavelink Node connected: %r | Resumed: %s", payload.node, payload.resumed
-        )
+        if payload.resumed:
+            return
+
+        for guild_id, saved in list(self.bot.saved_player_states.items()):
+            try:
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                vc = guild.get_channel(saved["voice_channel_id"])
+                player = await wavelink.Player.connect(vc)
+                player.queue = saved["queue"]
+                self.bot._recreate_all_players()
+            except Exception as e:
+                logging.exception("Failed to restore player for guild %s: %s", guild_id, e)
+
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
