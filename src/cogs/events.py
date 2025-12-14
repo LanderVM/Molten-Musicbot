@@ -49,24 +49,14 @@ class EventHandlers(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
-        node = payload.node
-        logging.info("Node ready. resumed=%s session=%s", payload.resumed, payload.session_id)
+        """
+        Called when a wavelink node connects.
 
-        if payload.resumed:
-            return
-
-        for guild_id, saved in list(self.bot.saved_player_states.items()):
-            try:
-                guild = self.bot.get_guild(guild_id)
-                if not guild:
-                    continue
-                vc = guild.get_channel(saved["voice_channel_id"])
-                player = await wavelink.Player.connect(vc)
-                player.queue = saved["queue"]
-                self.bot._recreate_all_players()
-            except Exception as e:
-                logging.exception("Failed to restore player for guild %s: %s", guild_id, e)
-
+        :param payload: The event payload containing node information.
+        """
+        logging.info(
+            "Wavelink Node connected: %r | Resumed: %s", payload.node, payload.resumed
+        )
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
