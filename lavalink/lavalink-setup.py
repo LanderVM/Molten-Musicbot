@@ -93,7 +93,11 @@ def check_java(min_version=17):
         sys.exit(1)
 
     # Java prints version info to stderr
-    version_line = result.stderr.strip().splitlines()[0]
+    lines = result.stderr.strip().splitlines()
+    if not lines:
+        print("❌ Could not detect Java version output. Please check your Java installation.")
+        sys.exit(1)
+    version_line = lines[0]
     print(f"🔍 Detected Java: {version_line}")
 
     # Extract version number (works for OpenJDK 17+, 18+, etc.)
