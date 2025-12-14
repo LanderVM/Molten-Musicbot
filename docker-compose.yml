@@ -1,6 +1,7 @@
 services:
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4-alpine
+    user: "1000:1000"
     container_name: lavalink
     restart: unless-stopped
     environment:
