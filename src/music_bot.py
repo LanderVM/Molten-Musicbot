@@ -152,7 +152,7 @@ class Bot(commands.Bot):
                 read_message_history=True,
                 manage_messages=True,
                 embed_links=True,
-            ),            
+            ),
             guild.default_role: discord.PermissionOverwrite(
                 send_messages=True,
                 read_messages=True,

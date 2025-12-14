@@ -1,9 +1,10 @@
 services:
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4-alpine
-    user: "1000:1000"
     container_name: lavalink
     restart: unless-stopped
+    ports:
+      - "2333:2333"
     environment:
       # set Java options here (6GB heap size)
       - _JAVA_OPTIONS=-Xmx6G
@@ -27,18 +28,3 @@ services:
     environment:
       - API_TOKEN=your_secret_password
     restart: unless-stopped
-
-  molten-musicbot:
-    build: .
-    image: molten-musicbot:latest
-    container_name: molten-musicbot
-    environment:
-      LAVALINK_HOST: lavalink
-      LAVALINK_PORT: 2333
-      LAVALINK_PASSWORD: youshallnotpass
-      SSL_ENABLED: "false"
-      LOG_LEVEL: "INFO" # INFO or DEBUG
-    restart: unless-stopped
-    volumes:
-      - ./data:/app/data
-    command: sh -c "python lavalink/wait_for_lavalink.py && python src/main.py"
