@@ -26,17 +26,3 @@ services:
     environment:
       - API_TOKEN=your_secret_password
     restart: unless-stopped
-
-  molten-musicbot:
-    build: .
-    image: molten-musicbot:latest
-    container_name: molten-musicbot
-    environment:
-      LAVALINK_HOST: lavalink
-      LAVALINK_PORT: 2333
-      LAVALINK_PASSWORD: youshallnotpass
-      SSL_ENABLED: "false"
-      LOG_LEVEL: "INFO" # INFO or DEBUG
-    restart: unless-stopped
-    volumes:
-      - ./data:/app/data
