@@ -14,19 +14,6 @@ services:
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml
       - ./lavalink/plugins/:/opt/Lavalink/plugins/
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "-qO-",
-          "--header=Authorization:youshallnotpass",
-          "http://localhost:2333/v4/info",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
 
   ejs-api:
     # Uncomment to build locally (not supported right now)
@@ -54,6 +41,4 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
-    depends_on:
-      lavalink:
-        condition: service_healthy
+    command: sh -c "python lavalink/wait_for_lavalink.py && python src/main.py"
