@@ -3,6 +3,8 @@ services:
     image: ghcr.io/lavalink-devs/lavalink:4-alpine
     container_name: lavalink
     restart: unless-stopped
+    ports:
+      - "2333:2333"
     environment:
       # set Java options here (6GB heap size)
       - _JAVA_OPTIONS=-Xmx6G
