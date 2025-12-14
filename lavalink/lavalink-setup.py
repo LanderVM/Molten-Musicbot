@@ -1,8 +1,10 @@
-import sys
-import subprocess
-import requests
+import re
 import signal
+import subprocess
+import sys
 from pathlib import Path
+
+import requests
 
 # This script is mainly used for development purposes to easily setup and run Lavalink.
 
@@ -10,7 +12,10 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 LAVALINK_DIR = SCRIPT_DIR
 JAR_NAME = "Lavalink.jar"
 LAVALINK_JAR = LAVALINK_DIR / JAR_NAME
-GITHUB_API_RELEASES = "https://api.github.com/repos/lavalink-devs/Lavalink/releases/latest"
+GITHUB_API_RELEASES = (
+    "https://api.github.com/repos/lavalink-devs/Lavalink/releases/latest"
+)
+
 
 def get_latest_lavalink_url():
     resp = requests.get(GITHUB_API_RELEASES, timeout=10)
@@ -20,6 +25,7 @@ def get_latest_lavalink_url():
         if asset.get("name", "").endswith(".jar"):
             return asset["browser_download_url"], asset["name"]
     raise RuntimeError("Could not find Lavalink .jar in latest release assets.")
+
 
 def ensure_lavalink():
     LAVALINK_DIR.mkdir(exist_ok=True)
@@ -39,6 +45,7 @@ def ensure_lavalink():
 
     print("✅ Download complete:", target)
     return target
+
 
 def run_lavalink(jar_path):
     """Launch Lavalink and keep a handle to terminate on exit."""
@@ -71,6 +78,7 @@ def run_lavalink(jar_path):
     except KeyboardInterrupt:
         shutdown_handler(None, None)
 
+
 def check_java(min_version=17):
     """Check if Java is installed and is at least min_version."""
     try:
@@ -89,7 +97,6 @@ def check_java(min_version=17):
     print(f"🔍 Detected Java: {version_line}")
 
     # Extract version number (works for OpenJDK 17+, 18+, etc.)
-    import re
     match = re.search(r'version "(?P<ver>\d+)(\.(\d+))?', version_line)
     if not match:
         print("❌ Could not parse Java version.")
@@ -97,11 +104,14 @@ def check_java(min_version=17):
 
     major_version = int(match.group("ver"))
     if major_version < min_version:
-        print(f"❌ Java version {major_version} detected, but Lavalink requires {min_version}+.")
+        print(
+            f"❌ Java version {major_version} detected, but Lavalink requires {min_version}+."
+        )
         print("Please install a newer Java version and make sure it's in your PATH.")
         sys.exit(1)
 
     print(f"✅ Java version {major_version} is sufficient.")
+
 
 if __name__ == "__main__":
     check_java()
