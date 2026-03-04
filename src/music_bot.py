@@ -78,11 +78,36 @@ class Bot(commands.Bot):
         if self.user is None:
             raise RuntimeError("Bot user unavailable during setup_hook.")
 
+        lavalink_host = os.getenv(EnvironmentKeys.LAVALINK_HOST)
+        lavalink_port_raw = os.getenv(EnvironmentKeys.LAVALINK_PORT)
+        lavalink_password = os.getenv(EnvironmentKeys.LAVALINK_PASSWORD)
+
+        missing = [
+            name
+            for name, value in [
+                (EnvironmentKeys.LAVALINK_HOST, lavalink_host),
+                (EnvironmentKeys.LAVALINK_PORT, lavalink_port_raw),
+                (EnvironmentKeys.LAVALINK_PASSWORD, lavalink_password),
+            ]
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Missing required environment variables: {', '.join(missing)}"
+            )
+
+        try:
+            lavalink_port = int(lavalink_port_raw)
+        except ValueError:
+            raise RuntimeError(
+                f"Invalid {EnvironmentKeys.LAVALINK_PORT} value: must be a valid integer, got {lavalink_port_raw!r}"
+            )
+
         self.lavalink = lavalink.Client(self.user.id)
         self.lavalink.add_node(
-            host=os.getenv(EnvironmentKeys.LAVALINK_HOST),
-            port=int(os.getenv(EnvironmentKeys.LAVALINK_PORT)),
-            password=os.getenv(EnvironmentKeys.LAVALINK_PASSWORD),
+            host=lavalink_host,
+            port=lavalink_port,
+            password=lavalink_password,
             region="us",
             name="default-node",
             ssl=ssl_enabled,
@@ -736,8 +761,8 @@ class Bot(commands.Bot):
         self,
         guild: discord.Guild,
         player: lavalink.DefaultPlayer | None,
-        view: discord.ui.View = None,
-        embed: discord.Embed = None,
+        view: discord.ui.View | None = None,
+        embed: discord.Embed | None = None,
     ) -> None:
         """
         Updates the embed and view in the setup channel using the cached setup message.
@@ -776,7 +801,7 @@ class Bot(commands.Bot):
         self.set_latest_action("")
 
     async def _fetch_or_create_embed(
-        self, channel: discord.TextChannel, message_id: int, embed: discord.Embed = None
+        self, channel: discord.TextChannel, message_id: int, embed: discord.Embed | None = None
     ) -> discord.Embed:
         """
         Attempts to retrieve the embed from a cached message.
