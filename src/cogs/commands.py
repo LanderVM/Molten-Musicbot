@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional
 
 import discord
-import wavelink
 from discord import app_commands
 from discord.ext import commands
 
@@ -75,7 +74,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(name="play", description="Play a song with the given query.")
     @app_commands.check(dj_role_required)
     async def play(self, interaction: discord.Interaction, query: str):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_play_action(
             interaction, interaction.guild, interaction.user, player, query
         )
@@ -84,7 +83,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(name="stop", description="Stop playback and clear the queue.")
     @app_commands.check(dj_role_required)
     async def stop(self, interaction: discord.Interaction):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_stop_action(
             interaction, interaction.guild, interaction.user, player
         )
@@ -98,7 +97,7 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         count: Optional[app_commands.Range[int, 1, None]] = 1,
     ):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_skip_action(
             interaction, interaction.guild, interaction.user, player, count
         )
@@ -109,7 +108,7 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.check(dj_role_required)
     async def pause_resume(self, interaction: discord.Interaction):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_toggle_action(
             interaction, interaction.guild, interaction.user, player
         )
@@ -118,7 +117,7 @@ class MusicCommands(commands.Cog):
     @app_commands.command(name="disconnect", description="Disconnect the player.")
     @app_commands.check(dj_role_required)
     async def disconnect(self, interaction: discord.Interaction):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_disconnect_action(
             interaction, interaction.guild, interaction.user, player
         )
@@ -129,7 +128,7 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.check(dj_role_required)
     async def shuffle(self, interaction: discord.Interaction):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_shuffle_action(
             interaction, interaction.guild, interaction.user, player
         )
@@ -143,7 +142,7 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         page_size: app_commands.Range[int, 10, 25] = 20,
     ):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         result = await self.bot.handle_queue_action(
             interaction, interaction.guild, interaction.user, player, page_size
         )
@@ -165,7 +164,7 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         seconds: app_commands.Range[int, 1, None],
     ):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_forward_action(
             interaction, interaction.guild, interaction.user, player, seconds
         )
@@ -186,7 +185,7 @@ class MusicCommands(commands.Cog):
     async def nightcore(
         self, interaction: discord.Interaction, mode: app_commands.Choice[int]
     ):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_nightcore_action(
             interaction, interaction.guild, interaction.user, player, mode.value
         )
@@ -215,7 +214,7 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.check(dj_role_required)
     async def enable_247(self, interaction: discord.Interaction):
-        player: wavelink.Player = cast(wavelink.Player, interaction.guild.voice_client)
+        player = self.bot.get_player(interaction.guild.id)
         msg = await self.bot.handle_stay_247_action(
             interaction, interaction.guild, interaction.user, player
         )
