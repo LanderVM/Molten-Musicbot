@@ -101,8 +101,16 @@ Replace `your_discord_bot_token_here` with the bot token you obtained in step 3.
 
 ### 5. Install Required Packages
 
+Install the packages required to run the bot:
+
 ```bash
 pip install -r requirements.txt
+```
+
+For development tools (formatting, linting, etc.):
+
+```bash
+pip install -r requirements.dev.txt
 ```
 
 ### 6. Run the Bot
