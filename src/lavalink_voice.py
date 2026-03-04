@@ -17,11 +17,6 @@ class LavalinkVoiceClient(discord.VoiceProtocol):
 
         self.lavalink: lavalink.Client = self.client.lavalink
 
-    async def on_voice_server_update(self, data):
-        await self.lavalink.voice_update_handler(
-            {"t": "VOICE_SERVER_UPDATE", "d": data}
-        )
-
     async def on_voice_state_update(self, data):
         channel_id = data.get("channel_id")
 
@@ -29,8 +24,20 @@ class LavalinkVoiceClient(discord.VoiceProtocol):
             await self._destroy()
             return
 
-        self.channel = self.client.get_channel(int(channel_id))
-        await self.lavalink.voice_update_handler({"t": "VOICE_STATE_UPDATE", "d": data})
+        channel = self.client.get_channel(int(channel_id))
+
+        if channel is None:
+            guild = self.client.get_guild(self.guild_id)
+            if guild is None:
+                await self._destroy()
+                return
+            try:
+                channel = await guild.fetch_channel(int(channel_id))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                await self._destroy()
+                return
+
+        self.channel = channel
 
     async def connect(
         self,
