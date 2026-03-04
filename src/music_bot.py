@@ -1,18 +1,23 @@
 import asyncio
 import logging
 import os
+import random
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import List, cast
 
 import discord
-import wavelink
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import lavalink
 from cogs.buttons import ControlButton, PlayerControlView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
+from lavalink import LoadType
+from lavalink.filters import Timescale
+from lavalink_voice import LavalinkVoiceClient
 from utils import (
     Error,
     Success,
@@ -23,6 +28,7 @@ from utils import (
 )
 
 load_dotenv()
+URL_RX = re.compile(r"https?://(?:www\.)?.+")
 
 
 class Bot(commands.Bot):
@@ -49,6 +55,7 @@ class Bot(commands.Bot):
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
         self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self.lavalink: lavalink.Client | None = None
 
     def set_latest_action(self, action: str, persist: bool = False):
         """
@@ -68,21 +75,55 @@ class Bot(commands.Bot):
         Runs once when the bot starts. Connects to Lavalink node and loads extensions.
         """
         ssl_enabled = os.getenv(EnvironmentKeys.SSL_ENABLED, "false").lower() == "true"
-        protocol = "wss://" if ssl_enabled else "ws://"
+        if self.user is None:
+            raise RuntimeError("Bot user unavailable during setup_hook.")
 
-        await wavelink.Pool.connect(
-            nodes=[
-                wavelink.Node(
-                    uri=f"{protocol}{os.getenv(EnvironmentKeys.LAVALINK_HOST)}:{os.getenv(EnvironmentKeys.LAVALINK_PORT)}",
-                    password=os.getenv(EnvironmentKeys.LAVALINK_PASSWORD),
-                )
-            ],
-            client=self,
-            cache_capacity=100,
+        lavalink_host = os.getenv(EnvironmentKeys.LAVALINK_HOST)
+        lavalink_port_raw = os.getenv(EnvironmentKeys.LAVALINK_PORT)
+        lavalink_password = os.getenv(EnvironmentKeys.LAVALINK_PASSWORD)
+
+        missing = [
+            name
+            for name, value in [
+                (EnvironmentKeys.LAVALINK_HOST, lavalink_host),
+                (EnvironmentKeys.LAVALINK_PORT, lavalink_port_raw),
+                (EnvironmentKeys.LAVALINK_PASSWORD, lavalink_password),
+            ]
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Missing required environment variables: {', '.join(missing)}"
+            )
+
+        try:
+            lavalink_port = int(lavalink_port_raw)
+        except ValueError:
+            raise RuntimeError(
+                f"Invalid {EnvironmentKeys.LAVALINK_PORT} value: must be a valid integer, got {lavalink_port_raw!r}"
+            )
+
+        self.lavalink = lavalink.Client(self.user.id)
+        self.lavalink.add_node(
+            host=lavalink_host,
+            port=lavalink_port,
+            password=lavalink_password,
+            region="us",
+            name="default-node",
+            ssl=ssl_enabled,
         )
+        self.add_listener(self.lavalink.voice_update_handler, "on_socket_response")
+
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
         await self.tree.sync()
+
+    def get_player(self, guild_id: int) -> lavalink.DefaultPlayer | None:
+        if not self.lavalink:
+            return None
+        return cast(
+            lavalink.DefaultPlayer | None, self.lavalink.player_manager.get(guild_id)
+        )
 
     async def load_setup_message_cache(self) -> None:
         """
@@ -198,7 +239,7 @@ class Bot(commands.Bot):
             return "I need the following permissions: `Connect`, `Embed Links`, `Manage Channels`, `Manage Messages`, `Manage Roles`, `Send Messages`, `Speak` and `View Channels`."
 
     def create_now_playing_embed(
-        self, track: wavelink.Playable, original: wavelink.Playable | None
+        self, track: lavalink.AudioTrack, guild: discord.Guild
     ) -> discord.Embed:
         embed = discord.Embed(
             title=track.title, url=track.uri, color=discord.Color.blue()
@@ -207,18 +248,24 @@ class Bot(commands.Bot):
             name="Now Playing",
             icon_url=os.getenv(EnvironmentKeys.NOW_PLAYING_SPIN_GIF_URL),
         )
-        requester = getattr(track, "requester", None) or getattr(
-            original, "requester", None
+        requester_id = getattr(track, "requester", None)
+        requester = (
+            guild.get_member(requester_id) if isinstance(requester_id, int) else None
         )
         embed.add_field(
             name="Requested by",
             value=requester.mention if requester else "Unknown",
             inline=True,
         )
-        duration = format_duration(track.length) if not track.is_stream else "Live"
+        duration_ms = getattr(track, "duration", getattr(track, "length", 0))
+        is_stream = bool(getattr(track, "stream", False))
+        duration = format_duration(duration_ms) if not is_stream else "Live"
         embed.add_field(name="Duration", value=duration, inline=True)
-        if track.artwork:
-            embed.set_image(url=track.artwork)
+        artwork = getattr(track, "artwork_url", None) or getattr(
+            track, "artworkUrl", None
+        )
+        if artwork:
+            embed.set_image(url=artwork)
         else:
             embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
         if self.latest_action:
@@ -360,7 +407,7 @@ class Bot(commands.Bot):
             message,
             message.guild,
             message.author,
-            cast(wavelink.Player, message.guild.voice_client),
+            self.get_player(message.guild.id),
             message.content,
         )
 
@@ -377,58 +424,51 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
         query: str,
     ) -> str:
-        search_task = asyncio.create_task(wavelink.Playable.search(query))
-
-        if not player:
+        if not guild.voice_client:
             try:
-                player = await user.voice.channel.connect(cls=wavelink.Player)
+                await user.voice.channel.connect(cls=LavalinkVoiceClient)
             except Exception as e:
                 logging.error("Voice connection failed: %s", e)
                 return Error("🚫 Could not join your voice channel.")
 
+        if not self.lavalink:
+            return Error("Lavalink client is not initialized.")
+
+        player = self.get_player(guild.id) or cast(
+            lavalink.DefaultPlayer, self.lavalink.player_manager.create(guild.id)
+        )
+
+        query = query.strip("<>")
+        if not URL_RX.match(query):
+            query = f"ytsearch:{query}"
+
         try:
-            tracks = await search_task
+            results = await self.lavalink.get_tracks(query)
         except Exception as e:
             logging.error("Search failed: %s", e)
             return Error("🔍 Could not search for that track.")
 
-        if not tracks:
+        if not results or not results.tracks:
             return Error("❌ No results found for that query.")
 
-        player.autoplay = wavelink.AutoPlayMode.partial
-
-        if isinstance(tracks, wavelink.Playlist):
-            first = tracks.tracks[0]
-            first.requester = user
-            await player.queue.put_wait(first)
-            msg = f"Added playlist **`{tracks.name}`** to the queue."
-
-            async def _enqueue_rest():
-                for t in tracks.tracks[1:]:
-                    t.requester = user
-                    await player.queue.put_wait(t)
-
-            asyncio.create_task(_enqueue_rest())
-
+        if results.load_type == LoadType.PLAYLIST:
+            for track in results.tracks:
+                player.add(track, requester=user.id)
+            playlist_name = getattr(results.playlist_info, "name", "playlist")
+            msg = f"Added playlist **`{playlist_name}`** to the queue."
         else:
-            track = tracks[0]
-            track.requester = user
-            await player.queue.put_wait(track)
-            msg = f"Added **`{track}`** to the queue."
+            track = results.tracks[0]
+            player.add(track, requester=user.id)
+            msg = f"Added **`{track.title}`** to the queue."
 
-        if not player.playing:
-            await asyncio.sleep(0.2)
-            next_track = await player.queue.get_wait()
-            await player.play(
-                next_track,
-                volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME)),
-            )
+        if not player.is_playing:
+            await player.play(volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME, "100")))
 
         asyncio.create_task(
-            self.update_setup_buttons(player.guild, PlayerControlView(self, player))
+            self.update_setup_buttons(guild, PlayerControlView(self, player))
         )
 
         return Success(msg)
@@ -440,7 +480,7 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
     ) -> str:
         """
         Stops the current track, clears the queue, but stays connected.
@@ -451,9 +491,23 @@ class Bot(commands.Bot):
         try:
             self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
             player.queue.clear()
-            await player.skip()
+            await player.stop()
 
-            # on_wavelink_track_end in events.py updates the embed, no need to do it here
+            await self.update_setup_embed(
+                guild,
+                player,
+                embed=self.create_default_embed(),
+                view=PlayerControlView(
+                    self,
+                    player,
+                    disabled_buttons=[
+                        ControlButton.STOP,
+                        ControlButton.PAUSE_RESUME,
+                        ControlButton.SKIP,
+                        ControlButton.SHUFFLE,
+                    ],
+                ),
+            )
 
             return Success("Playback stopped and queue cleared.")
         except Exception as e:
@@ -467,25 +521,25 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
         count: int = 1,
     ) -> str:
-        if not player or not player.playing:
+        if not player or not player.is_playing:
             return Error("No active player.")
-        if count - 1 > player.queue.count:
+        if count - 1 > len(player.queue):
             return Error(
-                f"Cannot skip {count} tracks; only {player.queue.count} in the queue."
+                f"Cannot skip {count} tracks; only {len(player.queue)} in the queue."
             )
         if count > 1:
             for _ in range(count - 1):
                 try:
-                    player.queue.delete(0)
-                except IndexError:
+                    player.queue.pop(0)
+                except (IndexError, AttributeError):
                     break
 
         try:
             self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
-            await player.skip(force=True)
+            await player.skip()
             return Success(f"⏭️ Skipped {count} track{'s' if count>1 else ''}.")
         except Exception as e:
             logging.error("Skip error", exc_info=e)
@@ -498,14 +552,14 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
     ) -> str:
         if not player:
             return Error("No active player.")
 
         new_pause_state = not player.paused
         try:
-            await player.pause(new_pause_state)
+            await player.set_pause(new_pause_state)
         except Exception as e:
             logging.error(f"Toggle error: {e}")
             return Error("Failed to toggle pause/resume.")
@@ -520,13 +574,17 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
     ) -> str:
         if not guild.voice_client:
             return Error("🚫 I’m not connected to any voice channel.")
         try:
             self.set_latest_action(f"Disconnected by {user.display_name}")
-            await player.disconnect()
+            active_player = player or self.get_player(guild.id)
+            if active_player:
+                active_player.queue.clear()
+                await active_player.stop()
+            await guild.voice_client.disconnect(force=True)
 
         except Exception as e:
             logging.error(f"Disconnect error: {e}")
@@ -556,12 +614,12 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
     ) -> str:
-        if not player or player.queue.is_empty:
+        if not player or not player.queue:
             return Error("No active player or the queue is empty.")
         try:
-            player.queue.shuffle()
+            random.shuffle(player.queue)
             self.set_latest_action(f"Shuffled by {user.display_name}")
             await self.update_setup_embed(guild, player)
             return Success("The queue has been shuffled!")
@@ -574,13 +632,13 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
         page_size: int,
     ):
         if not player or not player.queue:
             return Error("The queue is empty.")
 
-        tracks = player.queue.copy()
+        tracks = list(player.queue)
         view = QueueView(interaction.user, tracks, page_size)
         embed = view.current_embed()
         return embed, view
@@ -592,14 +650,14 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
         seconds: int,
     ) -> str:
-        if not player or not player.playing:
+        if not player or not player.is_playing or not player.current:
             return Error("No track is currently playing.")
 
         new_pos = player.position + (seconds * 1000)
-        if new_pos >= player.current.length:
+        if new_pos >= player.current.duration:
             return Error("Cannot forward beyond the end of the track.")
 
         try:
@@ -619,24 +677,22 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
         mode: int,
     ) -> str:
         if not player:
             return Error("No active player.")
 
-        filters = player.filters
         try:
             if mode == 0:
-                filters.timescale.reset()
+                await player.remove_filter(Timescale)
                 self.set_latest_action(f"Nightcore OFF by {user.display_name}")
                 msg = "Nightcore effect disabled."
             else:
-                filters.timescale.set(pitch=1.2, speed=1.1, rate=1.0)
+                await player.update_filter(Timescale, pitch=1.2, speed=1.1, rate=1.0)
                 self.set_latest_action(f"Nightcore ON by {user.display_name}")
                 msg = "Nightcore effect enabled!"
 
-            await player.set_filters(filters)
             await self.update_setup_embed(guild, player)
             return Success(msg)
         except Exception as e:
@@ -648,7 +704,7 @@ class Bot(commands.Bot):
         interaction: discord.Interaction,
         guild: discord.Guild,
         user: discord.User,
-        player: wavelink.Player,
+        player: lavalink.DefaultPlayer | None,
     ) -> str:
         setup_data = self.setup_channels.setdefault(guild.id, {})
 
@@ -681,31 +737,32 @@ class Bot(commands.Bot):
         )
 
         if not stay:
-            player: wavelink.Player = cast(wavelink.Player, vc)
+            player = self.get_player(guild.id)
 
-            await self.update_setup_embed(
-                player.guild,
-                player,
-                embed=self.create_default_embed(),
-                view=PlayerControlView(
-                    self,
+            if player:
+                await self.update_setup_embed(
+                    guild,
                     player,
-                    disabled_buttons=[
-                        ControlButton.STOP,
-                        ControlButton.PAUSE_RESUME,
-                        ControlButton.SKIP,
-                        ControlButton.SHUFFLE,
-                    ],
-                ),
-            )
+                    embed=self.create_default_embed(),
+                    view=PlayerControlView(
+                        self,
+                        player,
+                        disabled_buttons=[
+                            ControlButton.STOP,
+                            ControlButton.PAUSE_RESUME,
+                            ControlButton.SKIP,
+                            ControlButton.SHUFFLE,
+                        ],
+                    ),
+                )
             await vc.disconnect()
 
     async def update_setup_embed(
         self,
         guild: discord.Guild,
-        player: wavelink.Player | None,
-        view: discord.ui.View = None,
-        embed: discord.Embed = None,
+        player: lavalink.DefaultPlayer | None,
+        view: discord.ui.View | None = None,
+        embed: discord.Embed | None = None,
     ) -> None:
         """
         Updates the embed and view in the setup channel using the cached setup message.
@@ -744,7 +801,7 @@ class Bot(commands.Bot):
         self.set_latest_action("")
 
     async def _fetch_or_create_embed(
-        self, channel: discord.TextChannel, message_id: int, embed: discord.Embed = None
+        self, channel: discord.TextChannel, message_id: int, embed: discord.Embed | None = None
     ) -> discord.Embed:
         """
         Attempts to retrieve the embed from a cached message.
@@ -846,7 +903,7 @@ class Bot(commands.Bot):
 
 class QueueView(discord.ui.View):
     def __init__(
-        self, user: discord.User, tracks: List[wavelink.Playable], page_size: int = 15
+        self, user: discord.User, tracks: List[lavalink.AudioTrack], page_size: int = 15
     ):
         super().__init__(timeout=120)
         self.user = user
@@ -862,7 +919,8 @@ class QueueView(discord.ui.View):
             # build each page’s embed
             lines = []
             for i, track in enumerate(chunk, start=start + 1):
-                dur = f"{track.length//60000}:{(track.length%60000)//1000:02}"
+                length = getattr(track, "duration", 0)
+                dur = f"{length//60000}:{(length%60000)//1000:02}"
                 lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
 
             desc = (

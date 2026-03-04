@@ -41,4 +41,4 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
-    command: sh -c "python lavalink/wait_for_lavalink.py && python src/main.py"
+    command: sh -c "python src/wait_for_lavalink.py && python src/main.py"

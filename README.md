@@ -1,6 +1,6 @@
 # Molten Musicbot
 
-Molten is a lightweight music bot built on top of Lavalink v4, designed to provide high-performance and low-latency music playback. This bot utilizes Wavelink to interact with Lavalink and play music efficiently.
+Molten is a lightweight music bot built on top of Lavalink v4, designed to provide high-performance and low-latency music playback. This bot utilizes Lavalink.py to interact with Lavalink and play music efficiently.
 
 ## Example
 
@@ -101,8 +101,16 @@ Replace `your_discord_bot_token_here` with the bot token you obtained in step 3.
 
 ### 5. Install Required Packages
 
+Install the packages required to run the bot:
+
 ```bash
 pip install -r requirements.txt
+```
+
+For development tools (formatting, linting, etc.):
+
+```bash
+pip install -r requirements.dev.txt
 ```
 
 ### 6. Run the Bot

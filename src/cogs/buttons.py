@@ -3,10 +3,10 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
-import wavelink
 from discord import Interaction
 from discord.ui import Button, View, button
 
+import lavalink
 from utils import Error
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ class PlayerControlView(View):
     def __init__(
         self,
         bot: Bot,
-        player: Optional[wavelink.Player],
+        player: Optional[lavalink.DefaultPlayer],
         disabled_buttons: List[ControlButton] = None,
         *,
         timeout: float = None,
@@ -51,7 +51,7 @@ class PlayerControlView(View):
             elif child.custom_id == ControlButton.PAUSE_RESUME.value:
                 child.emoji = "▶️" if self.player.paused else "⏸️"
             elif (
-                self.player.queue.count <= 1
+                len(self.player.queue) <= 1
                 and child.custom_id == ControlButton.SHUFFLE.value
             ):
                 child.disabled = True

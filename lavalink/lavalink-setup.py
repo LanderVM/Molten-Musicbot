@@ -94,11 +94,15 @@ def check_java(min_version=17):
 
     # Java prints version info to stderr
     if result.returncode != 0:
-        print("❌ Failed to run 'java -version'. Please ensure Java is installed and accessible.")
+        print(
+            "❌ Failed to run 'java -version'. Please ensure Java is installed and accessible."
+        )
         sys.exit(1)
     stderr_lines = result.stderr.strip().splitlines()
     if not stderr_lines:
-        print("❌ Could not detect Java version output. Please check your Java installation.")
+        print(
+            "❌ Could not detect Java version output. Please check your Java installation."
+        )
         sys.exit(1)
     version_line = stderr_lines[0]
 
