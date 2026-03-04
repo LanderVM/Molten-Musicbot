@@ -1,9 +1,10 @@
-import time
-import requests
 import os
+import time
+
+import requests
 
 url = f"http://{os.environ['LAVALINK_HOST']}:{os.environ['LAVALINK_PORT']}/v4/info"
-headers = {"Authorization": os.environ['LAVALINK_PASSWORD']}
+headers = {"Authorization": os.environ["LAVALINK_PASSWORD"]}
 
 while True:
     try:

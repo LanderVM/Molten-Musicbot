@@ -4,8 +4,10 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
-import lavalink
 from discord.ext import commands
+
+import lavalink
+from cogs.buttons import ControlButton, PlayerControlView
 from lavalink.events import (
     NodeReadyEvent,
     PlayerErrorEvent,
@@ -13,8 +15,6 @@ from lavalink.events import (
     TrackStartEvent,
     TrackStuckEvent,
 )
-
-from cogs.buttons import ControlButton, PlayerControlView
 from utils import Error
 
 if TYPE_CHECKING:

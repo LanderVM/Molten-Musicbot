@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import discord
+
 import lavalink
 from lavalink.errors import ClientError
 
@@ -17,7 +18,9 @@ class LavalinkVoiceClient(discord.VoiceProtocol):
         self.lavalink: lavalink.Client = self.client.lavalink
 
     async def on_voice_server_update(self, data):
-        await self.lavalink.voice_update_handler({"t": "VOICE_SERVER_UPDATE", "d": data})
+        await self.lavalink.voice_update_handler(
+            {"t": "VOICE_SERVER_UPDATE", "d": data}
+        )
 
     async def on_voice_state_update(self, data):
         channel_id = data.get("channel_id")

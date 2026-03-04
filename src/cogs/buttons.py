@@ -3,10 +3,10 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
-import lavalink
 from discord import Interaction
 from discord.ui import Button, View, button
 
+import lavalink
 from utils import Error
 
 if TYPE_CHECKING:

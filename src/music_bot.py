@@ -8,15 +8,15 @@ from datetime import datetime, timezone
 from typing import List, cast
 
 import discord
-import lavalink
 from discord.ext import commands
 from dotenv import load_dotenv
-from lavalink import LoadType
-from lavalink.filters import Timescale
 
+import lavalink
 from cogs.buttons import ControlButton, PlayerControlView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
+from lavalink import LoadType
+from lavalink.filters import Timescale
 from lavalink_voice import LavalinkVoiceClient
 from utils import (
     Error,
@@ -96,7 +96,9 @@ class Bot(commands.Bot):
     def get_player(self, guild_id: int) -> lavalink.DefaultPlayer | None:
         if not self.lavalink:
             return None
-        return cast(lavalink.DefaultPlayer | None, self.lavalink.player_manager.get(guild_id))
+        return cast(
+            lavalink.DefaultPlayer | None, self.lavalink.player_manager.get(guild_id)
+        )
 
     async def load_setup_message_cache(self) -> None:
         """
@@ -222,7 +224,9 @@ class Bot(commands.Bot):
             icon_url=os.getenv(EnvironmentKeys.NOW_PLAYING_SPIN_GIF_URL),
         )
         requester_id = getattr(track, "requester", None)
-        requester = guild.get_member(requester_id) if isinstance(requester_id, int) else None
+        requester = (
+            guild.get_member(requester_id) if isinstance(requester_id, int) else None
+        )
         embed.add_field(
             name="Requested by",
             value=requester.mention if requester else "Unknown",
@@ -232,7 +236,9 @@ class Bot(commands.Bot):
         is_stream = bool(getattr(track, "stream", False))
         duration = format_duration(duration_ms) if not is_stream else "Live"
         embed.add_field(name="Duration", value=duration, inline=True)
-        artwork = getattr(track, "artwork_url", None) or getattr(track, "artworkUrl", None)
+        artwork = getattr(track, "artwork_url", None) or getattr(
+            track, "artworkUrl", None
+        )
         if artwork:
             embed.set_image(url=artwork)
         else:
