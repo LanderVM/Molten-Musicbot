@@ -112,7 +112,6 @@ class Bot(commands.Bot):
             name="default-node",
             ssl=ssl_enabled,
         )
-        self.add_listener(self.lavalink.voice_update_handler, "on_socket_response")
 
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
