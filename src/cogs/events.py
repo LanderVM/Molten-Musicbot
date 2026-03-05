@@ -121,7 +121,7 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event,
         )
-        await event.player.skip()
+        # await event.player.skip()
 
     @lavalink.listener(TrackStuckEvent)
     async def on_lavalink_track_stuck(self, event: TrackStuckEvent):
@@ -130,7 +130,7 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event.threshold,
         )
-        await event.player.skip()
+        # await event.player.skip()
 
 
 async def setup(bot: commands.Bot):
