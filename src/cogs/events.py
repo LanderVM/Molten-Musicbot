@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import discord
@@ -47,6 +48,8 @@ class EventHandlers(commands.Cog):
 
     @lavalink.listener(NodeReadyEvent)
     async def on_lavalink_node_ready(self, event: NodeReadyEvent):
+        self.bot.lavalink_ready = True
+        self.bot.lavalink_last_ready_at = datetime.now(timezone.utc)
         logging.info(
             "Lavalink node ready: %s | Session: %s | Resumed: %s",
             event.node,

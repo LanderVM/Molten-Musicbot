@@ -3,9 +3,40 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from typing import Protocol
+from urllib.parse import urlparse
 
 SETUP_CHANNELS_FILE = "data/setup_channels.json"
 os.makedirs(os.path.dirname(SETUP_CHANNELS_FILE), exist_ok=True)
+
+
+class TrackWithTitleAndUri(Protocol):
+    title: str | None
+    uri: str | None
+
+
+def get_track_display_title(track: TrackWithTitleAndUri) -> str:
+    title = getattr(track, "title", None)
+    if title and title.strip().lower() != "unknown title":
+        return title
+
+    uri = getattr(track, "uri", None)
+    if not uri:
+        return title or "Unknown title"
+
+    try:
+        parsed = urlparse(uri if "://" in uri else f"https://{uri}")
+
+        host = parsed.hostname or ""
+        host = host.lower()
+
+        if host.startswith("www."):
+            host = host[4:]
+
+        return host or (title or "Unknown title")
+
+    except Exception:
+        return title or "Unknown title"
 
 
 def load_setup_channels() -> dict:

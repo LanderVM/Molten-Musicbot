@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from enums import SetupChannelKeys
-from utils import Error
+from utils import Error, get_track_display_title
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -155,6 +155,111 @@ class MusicCommands(commands.Cog):
         )
 
     @app_commands.command(
+        name="status",
+        description="Show music setup and Lavalink status for this server.",
+    )
+    async def status(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "🚫 This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        guild = interaction.guild
+
+        setup_data = self.bot.setup_channels.get(guild.id, {})
+        setup_channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
+        setup_channel = (
+            guild.get_channel(setup_channel_id)
+            if setup_channel_id
+            else None
+        )
+
+        # Setup status
+        if setup_channel:
+            setup_value = f"{setup_channel.mention}"
+        elif setup_channel_id:
+            setup_value = f"Missing channel (<#{setup_channel_id}>)"
+        else:
+            setup_value = "Not configured"
+
+        # Lavalink status
+        lavalink_connected = (
+            self.bot.lavalink and self.bot.lavalink_ready
+        )
+
+        lavalink_value = (
+            "🟢 Connected"
+            if lavalink_connected
+            else "🔴 Disconnected"
+        )
+
+        # Player status
+        player = self.bot.get_player(guild.id)
+
+        if player and player.current:
+            current_title = get_track_display_title(player.current)
+            player_channel_id = getattr(player, "channel_id", None)
+
+            player_value = f"> Playing [{current_title}]({player.current.uri})"
+
+            if player_channel_id:
+                player_value += f"\n> Channel: <#{player_channel_id}>"
+
+        elif player:
+            player_value = "> ⏸️ Idle player"
+
+        else:
+            player_value = "> ⚫ No active player"
+
+        # Embed color based on Lavalink status
+        color = (
+            discord.Color.green()
+            if lavalink_connected
+            else discord.Color.red()
+        )
+
+        embed = discord.Embed(
+            title="Molten Music Status",
+            description=(
+                f"Status information for **{guild.name}**"
+            ),
+            color=color,
+        )
+
+        embed.add_field(
+            name="Setup Channel",
+            value=f"> {setup_value}",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Lavalink",
+            value=f"> {lavalink_value}",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Playback",
+            value=f"{player_value}",
+            inline=False,
+        )
+
+        embed.set_footer(
+            text=f"Guild ID: {guild.id}"
+        )
+
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+            delete_after=15,
+        )
+
+    @app_commands.command(
         name="forward", description="Forward song by a given number of seconds"
     )
     @app_commands.check(dj_role_required)
@@ -226,7 +331,7 @@ class MusicCommands(commands.Cog):
     )
     async def help_command(self, interaction: discord.Interaction):
         help_message = """
-**Music Bot Setup Help:**
+**Molten Music Bot Setup Help:**
 
 To set up a music request channel in your server, use the `/setup` command. This will create a dedicated channel where users can send song requests.
         
@@ -243,6 +348,7 @@ Once the channel is created, you can:
 - Use the `/disconnect` command to disconnect the player and stop playback.
 - Use the `/forward <seconds>` command to skip forward by a given number of seconds.
 - Use the `/queue` command to display the current queue of songs.
+- Use the `/status` command to view music setup and Lavalink status.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
 

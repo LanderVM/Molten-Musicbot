@@ -22,6 +22,7 @@ from utils import (
     Error,
     Success,
     format_duration,
+    get_track_display_title,
     load_setup_channels,
     remove_setup_channel,
     save_setup_channels_async,
@@ -56,6 +57,8 @@ class Bot(commands.Bot):
         self.dj_roles: dict[int, discord.Role] = {}
         self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.lavalink: lavalink.Client | None = None
+        self.lavalink_ready = False
+        self.lavalink_last_ready_at: datetime | None = None
 
     def set_latest_action(self, action: str, persist: bool = False):
         """
@@ -241,7 +244,7 @@ class Bot(commands.Bot):
         self, track: lavalink.AudioTrack, guild: discord.Guild
     ) -> discord.Embed:
         embed = discord.Embed(
-            title=track.title, url=track.uri, color=discord.Color.blue()
+            title=get_track_display_title(track), url=track.uri, color=discord.Color.blue()
         )
         embed.set_author(
             name="Now Playing",
@@ -461,7 +464,7 @@ class Bot(commands.Bot):
         else:
             track = results.tracks[0]
             player.add(track, requester=user.id)
-            msg = f"Added **`{track.title}`** to the queue."
+            msg = f"Added **`{get_track_display_title(track)}`** to the queue."
 
         if not player.is_playing:
             await player.play(volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME, "100")))
@@ -920,7 +923,7 @@ class QueueView(discord.ui.View):
             for i, track in enumerate(chunk, start=start + 1):
                 length = getattr(track, "duration", 0)
                 dur = f"{length//60000}:{(length%60000)//1000:02}"
-                lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
+                lines.append(f"**{i}.** [{get_track_display_title(track)}]({track.uri}) — `{dur}`")
 
             desc = (
                 f"Page {page+1}/{total_pages}\n"
