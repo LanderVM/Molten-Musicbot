@@ -30,6 +30,7 @@ from utils import (
 
 load_dotenv()
 URL_RX = re.compile(r"https?://(?:www\.)?.+")
+LAVALINK_NOT_CONNECTED_ERROR = "🚫 Lavalink is not connected."
 
 
 class Bot(commands.Bot):
@@ -118,7 +119,11 @@ class Bot(commands.Bot):
 
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
-        await self.tree.sync()
+        try:
+            synced = await self.tree.sync()
+            logging.info("Synced %d application command(s)", len(synced))
+        except Exception as e:
+            logging.warning("Failed to sync application commands: %s", e)
 
     def get_player(self, guild_id: int) -> lavalink.DefaultPlayer | None:
         if not self.lavalink:
@@ -126,6 +131,9 @@ class Bot(commands.Bot):
         return cast(
             lavalink.DefaultPlayer | None, self.lavalink.player_manager.get(guild_id)
         )
+
+    def is_lavalink_connected(self) -> bool:
+        return self.lavalink is not None and self.lavalink_ready
 
     async def load_setup_message_cache(self) -> None:
         """
@@ -429,15 +437,15 @@ class Bot(commands.Bot):
         player: lavalink.DefaultPlayer | None,
         query: str,
     ) -> str:
+        if not self.is_lavalink_connected():
+            return Error(LAVALINK_NOT_CONNECTED_ERROR)
+
         if not guild.voice_client:
             try:
                 await user.voice.channel.connect(cls=LavalinkVoiceClient)
             except Exception as e:
                 logging.error("Voice connection failed: %s", e)
                 return Error("🚫 Could not join your voice channel.")
-
-        if not self.lavalink:
-            return Error("Lavalink client is not initialized.")
 
         player = self.get_player(guild.id) or cast(
             lavalink.DefaultPlayer, self.lavalink.player_manager.create(guild.id)

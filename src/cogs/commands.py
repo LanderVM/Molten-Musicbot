@@ -185,9 +185,7 @@ class MusicCommands(commands.Cog):
             setup_value = "Not configured"
 
         # Lavalink status
-        lavalink_connected = (
-            self.bot.lavalink and self.bot.lavalink_ready
-        )
+        lavalink_connected = self.bot.is_lavalink_connected()
 
         lavalink_value = (
             "🟢 Connected"
