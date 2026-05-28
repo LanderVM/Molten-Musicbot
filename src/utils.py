@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 SETUP_CHANNELS_FILE = "data/setup_channels.json"
 os.makedirs(os.path.dirname(SETUP_CHANNELS_FILE), exist_ok=True)
 
+_save_lock = asyncio.Lock()  # Prevents concurrent JSON writes from corrupting file
+
 
 class TrackWithTitleAndUri(Protocol):
     title: str | None
@@ -70,7 +72,8 @@ def save_setup_channels_sync(data: dict) -> None:
 
 
 async def save_setup_channels_async(data: dict) -> None:
-    await asyncio.to_thread(save_setup_channels_sync, data)
+    async with _save_lock:
+        await asyncio.to_thread(save_setup_channels_sync, data)
 
 
 def remove_setup_channel(guild_id: int, data: dict) -> None:

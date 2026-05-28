@@ -54,7 +54,7 @@ class Bot(commands.Bot):
         self.setup_channels = load_setup_channels()
         self.latest_action: dict[int, LatestAction] = {}
         self.start_time = datetime.now(timezone.utc)
-        self.delete_message_tags: set[int] = set()
+        self.delete_message_tags: set[tuple[int, int]] = set()  # (guild_id, message_id)
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
         self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -592,7 +592,7 @@ class Bot(commands.Bot):
             await self.update_setup_embed(
                 guild,
                 player,
-                embed=self.create_default_embed(),
+                embed=self.create_default_embed(guild),
                 view=PlayerControlView(
                     self,
                     player,
@@ -692,7 +692,7 @@ class Bot(commands.Bot):
         await self.update_setup_embed(
             guild,
             player,
-            embed=self.create_default_embed(),
+            embed=self.create_default_embed(guild),
             view=PlayerControlView(
                 self,
                 player,
@@ -847,7 +847,7 @@ class Bot(commands.Bot):
                 await self.update_setup_embed(
                     guild,
                     player,
-                    embed=self.create_default_embed(),
+                    embed=self.create_default_embed(guild),
                     view=PlayerControlView(
                         self,
                         player,
@@ -901,7 +901,7 @@ class Bot(commands.Bot):
                 > 3600
             )
         ):
-            self.delete_message_tags.add(new_message_id)
+            self.delete_message_tags.add((guild.id, new_message_id))
         self.clear_latest_action(guild.id)
 
     async def _fetch_or_create_embed(
@@ -925,10 +925,10 @@ class Bot(commands.Bot):
                 logging.info("Fetched and cached message for guild %s.", guild_id)
             except Exception as e:
                 logging.error("Error fetching embed for guild %s: %s", guild_id, e)
-                return self.create_default_embed()
+                return self.create_default_embed(guild)
 
         if embed is None:
-            embed = message.embeds[0] if message.embeds else self.create_default_embed()
+            embed = message.embeds[0] if message.embeds else self.create_default_embed(guild)
         latest_action = self.latest_action.get(guild.id)
         if latest_action:
             embed.set_footer(text=latest_action.text)
@@ -955,9 +955,9 @@ class Bot(commands.Bot):
         try:
             if message is None:
                 message = await channel.fetch_message(message_id)
-            if message_id in self.delete_message_tags:
+            if (guild_id, message_id) in self.delete_message_tags:
                 await message.delete()
-                self.delete_message_tags.discard(message_id)
+                self.delete_message_tags.discard((guild_id, message_id))
                 new_message = await channel.send(embed=embed, view=view)
                 self.setup_message_cache[guild_id] = new_message
                 return new_message.id, False, new_message

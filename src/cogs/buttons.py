@@ -8,7 +8,7 @@ from discord import Interaction
 from discord.ui import Button, View, button
 
 import lavalink
-from utils import Error
+from utils import Error, get_track_display_title
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -120,7 +120,7 @@ class QueueView(View):
             for i, track in enumerate(chunk, start=start + 1):
                 length = getattr(track, "duration", 0)
                 dur = f"{length//60000}:{(length%60000)//1000:02}"
-                lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
+                lines.append(f"**{i}.** [{get_track_display_title(track)}]({track.uri}) — `{dur}`")
 
             desc = (
                 f"Page {page+1}/{total_pages}\n"
