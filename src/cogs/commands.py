@@ -27,16 +27,18 @@ class MusicCommands(commands.Cog):
     ):
         if isinstance(error, app_commands.MissingPermissions):
             missing = ", ".join(error.missing_permissions)
-            await interaction.response.send_message(
-                f"🚫 You need the `{missing}` permission(s) to use this command.",
-                ephemeral=True,
-                delete_after=5,
-            )
+            msg = f"🚫 You need the `{missing}` permission(s) to use this command."
         else:
-            await interaction.response.send_message(
-                "❌ An error occurred while running the command.", ephemeral=True
-            )
-            raise error
+            msg = "❌ An error occurred while running the command."
+            raise error  # still re-raise for unexpected errors
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+        except Exception:
+            pass  # if even the error message fails, don't crash the task
 
     def dj_role_required(interaction: discord.Interaction) -> bool:
         """
@@ -154,6 +156,12 @@ class MusicCommands(commands.Cog):
             embed=embed, view=view, ephemeral=True, delete_after=120
         )
 
+    @app_commands.command(name="status", description="Show the current bot status.")
+    async def status(self, interaction: discord.Interaction):
+        embed = self.bot.build_status_embed(interaction.guild)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    '''
     @app_commands.command(
         name="status",
         description="Show music setup and Lavalink status for this server.",
@@ -256,6 +264,7 @@ class MusicCommands(commands.Cog):
             ephemeral=True,
             delete_after=15,
         )
+        '''
 
     @app_commands.command(
         name="forward", description="Forward song by a given number of seconds"
@@ -346,7 +355,7 @@ Once the channel is created, you can:
 - Use the `/disconnect` command to disconnect the player and stop playback.
 - Use the `/forward <seconds>` command to skip forward by a given number of seconds.
 - Use the `/queue` command to display the current queue of songs.
-- Use the `/status` command to view music setup and Lavalink status.
+- Use the `/status` command to show Lavalink, queue, and uptime status.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
 

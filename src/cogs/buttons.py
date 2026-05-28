@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
+import discord
 from discord import Interaction
 from discord.ui import Button, View, button
 
@@ -99,3 +100,54 @@ class PlayerControlView(View):
             await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
         else:
             await interaction.response.defer()
+
+
+class QueueView(View):
+    def __init__(
+        self, user: discord.User, tracks: List[lavalink.AudioTrack], page_size: int = 15
+    ):
+        super().__init__(timeout=120)
+        self.user = user
+        self.tracks = tracks
+
+        self.embeds: List[discord.Embed] = []
+        total_pages = (len(tracks) - 1) // page_size + 1
+        for page in range(total_pages):
+            start = page * page_size
+            chunk = tracks[start : start + page_size]
+
+            lines = []
+            for i, track in enumerate(chunk, start=start + 1):
+                length = getattr(track, "duration", 0)
+                dur = f"{length//60000}:{(length%60000)//1000:02}"
+                lines.append(f"**{i}.** [{track.title}]({track.uri}) — `{dur}`")
+
+            desc = (
+                f"Page {page+1}/{total_pages}\n"
+                f"Total tracks: {len(tracks)}\n\n" + "\n".join(lines)
+            )
+            embed = discord.Embed(
+                title="Queue", description=desc, color=discord.Color.purple()
+            )
+            self.embeds.append(embed)
+
+        self.page = 0
+        self.prev.disabled = True
+        self.next.disabled = len(self.embeds) <= 1
+
+    def current_embed(self) -> discord.Embed:
+        return self.embeds[self.page]
+
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary)
+    async def prev(self, interaction: Interaction, button: Button):
+        self.page -= 1
+        self.prev.disabled = self.page == 0
+        self.next.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: Interaction, button: Button):
+        self.page += 1
+        self.next.disabled = self.page >= len(self.embeds) - 1
+        self.prev.disabled = False
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)

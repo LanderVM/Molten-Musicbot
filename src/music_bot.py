@@ -12,14 +12,15 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import lavalink
-from cogs.buttons import ControlButton, PlayerControlView
+from cogs.buttons import ControlButton, PlayerControlView, QueueView
 from decorators import debounce_action, ensure_voice
-from enums import EnvironmentKeys, LatestActionKeys, SetupChannelKeys
+from enums import EnvironmentKeys, SetupChannelKeys
 from lavalink import LoadType
 from lavalink.filters import Timescale
 from lavalink_voice import LavalinkVoiceClient
 from utils import (
     Error,
+    LatestAction,
     Success,
     format_duration,
     get_track_display_title,
@@ -48,11 +49,11 @@ class Bot(commands.Bot):
         super().__init__(
             command_prefix="!",
             intents=intents,
-            partials=["MESSAGE", "REACTION", "USER"],
         )
 
         self.setup_channels = load_setup_channels()
-        self.latest_action: dict | None = None
+        self.latest_action: dict[int, LatestAction] = {}
+        self.start_time = datetime.now(timezone.utc)
         self.delete_message_tags: set[int] = set()
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
@@ -61,18 +62,30 @@ class Bot(commands.Bot):
         self.lavalink_ready = False
         self.lavalink_last_ready_at: datetime | None = None
 
-    def set_latest_action(self, action: str, persist: bool = False):
+    def set_latest_action(
+        self, guild_id: int, action: str, persist: bool = False
+    ) -> None:
         """
         Sets the latest user action for display in embeds.
 
         Parameters:
+            guild_id (int): The guild the action belongs to.
             action (str): The action message (e.g., "Skipped by User").
             persist (bool): Whether to persist the action message on the next embed update.
         """
-        self.latest_action = {
-            LatestActionKeys.TEXT: action,
-            LatestActionKeys.PERSIST: persist,
-        }
+        self.latest_action[guild_id] = LatestAction(text=action, persist=persist)
+
+    def clear_latest_action(
+        self, guild_id: int, only_non_persistent: bool = False
+    ) -> None:
+        action = self.latest_action.get(guild_id)
+        if not action:
+            return
+
+        if only_non_persistent and action.persist:
+            return
+
+        self.latest_action.pop(guild_id, None)
 
     async def setup_hook(self):
         """
@@ -167,7 +180,7 @@ class Bot(commands.Bot):
             try:
                 msg = await channel.fetch_message(message_id)
                 self.setup_message_cache[guild_id] = msg
-                logging.info(f"Cached setup message for guild {guild_id}.")
+                logging.info("Cached setup message for guild %s.", guild_id)
             except Exception as e:
                 logging.warning(
                     f"Error fetching setup message for guild {guild_id}: {e}. Removing from setup_channels."
@@ -278,18 +291,89 @@ class Bot(commands.Bot):
             embed.set_image(url=artwork)
         else:
             embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
-        if self.latest_action:
-            embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
-            self.latest_action = None
+        latest_action = self.latest_action.get(guild.id)
+        if latest_action:
+            embed.set_footer(text=latest_action.text)
         return embed
 
-    def create_default_embed(self) -> discord.Embed:
+    def create_default_embed(self, guild: discord.Guild | None = None) -> discord.Embed:
         embed = discord.Embed(
             title="Now Playing", description="No song currently playing"
         )
         embed.set_image(url=os.getenv(EnvironmentKeys.NO_SONG_PLAYING_IMAGE_URL))
-        if self.latest_action:
-            embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
+        if guild:
+            latest_action = self.latest_action.get(guild.id)
+            if latest_action:
+                embed.set_footer(text=latest_action.text)
+        return embed
+
+    def build_status_embed(self, guild: discord.Guild | None) -> discord.Embed:
+        player = self.get_player(guild.id) if guild else None
+        lavalink_ok = self.is_lavalink_connected()
+        in_voice = bool(guild and guild.voice_client)
+        queue_length = len(player.queue) if player else 0
+        uptime = datetime.now(timezone.utc) - self.start_time
+
+        # Current track — clickable link if URI available
+        if player and player.current:
+            title = get_track_display_title(player.current)
+            uri = getattr(player.current, "uri", None)
+            current_track = f"[{title}]({uri})" if uri else title
+        else:
+            current_track = "Nothing playing"
+
+        # Setup channel reference
+        if guild:
+            setup_data = self.setup_channels.get(guild.id, {})
+            setup_channel_id = setup_data.get(SetupChannelKeys.CHANNEL)
+            if setup_channel_id and guild.get_channel(setup_channel_id):
+                setup_value = f"<#{setup_channel_id}>"
+            elif setup_channel_id:
+                setup_value = f"Missing channel (<#{setup_channel_id}>)"
+            else:
+                setup_value = "Not configured"
+        else:
+            setup_value = "Unknown"
+
+        # Uptime
+        days = uptime.days
+        hours, remainder = divmod(uptime.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime_parts = []
+        if days:
+            uptime_parts.append(f"{days}d")
+        if hours or days:
+            uptime_parts.append(f"{hours}h")
+        if minutes or hours or days:
+            uptime_parts.append(f"{minutes}m")
+        uptime_parts.append(f"{seconds}s")
+
+        embed = discord.Embed(
+            title="Bot Status",
+            color=discord.Color.green() if lavalink_ok else discord.Color.red(),
+        )
+        embed.add_field(
+            name="Lavalink",
+            value="🟢 Connected" if lavalink_ok else "🔴 Disconnected",
+            inline=True,
+        )
+        embed.add_field(
+            name="Voice",
+            value="🔊 In channel" if in_voice else "🔇 Not connected",
+            inline=True,
+        )
+        embed.add_field(name="Current Track", value=current_track, inline=False)
+        embed.add_field(
+            name="Queue Length",
+            value=f"{queue_length} tracks remaining",
+            inline=True,
+        )
+        embed.add_field(name="Bot Uptime", value=" ".join(uptime_parts), inline=True)
+        embed.add_field(
+            name="Setup Channel",
+            value=setup_value,
+            inline=False,
+        )
         return embed
 
     async def voice_precheck(
@@ -425,7 +509,7 @@ class Bot(commands.Bot):
         await asyncio.sleep(delay)
         if lock.locked():
             lock.release()
-            logging.debug(f"Lock released after {delay} seconds.")
+            logging.debug("Lock released after %s seconds.", delay)
 
     @ensure_voice
     @debounce_action(delay=0.1)
@@ -499,7 +583,9 @@ class Bot(commands.Bot):
             return Error("No active player.")
 
         try:
-            self.set_latest_action(f"Stopped by {user.display_name}", persist=True)
+            self.set_latest_action(
+                guild.id, f"Stopped by {user.display_name}", persist=True
+            )
             player.queue.clear()
             await player.stop()
 
@@ -521,7 +607,7 @@ class Bot(commands.Bot):
 
             return Success("Playback stopped and queue cleared.")
         except Exception as e:
-            logging.error(f"Stop error: {e}")
+            logging.error("Stop error: %s", e)
             return Error("Failed to stop playback.")
 
     @ensure_voice
@@ -548,7 +634,9 @@ class Bot(commands.Bot):
                     break
 
         try:
-            self.set_latest_action(f"Skipped by {user.display_name}", persist=True)
+            self.set_latest_action(
+                guild.id, f"Skipped by {user.display_name}", persist=True
+            )
             await player.skip()
             return Success(f"⏭️ Skipped {count} track{'s' if count>1 else ''}.")
         except Exception as e:
@@ -571,14 +659,15 @@ class Bot(commands.Bot):
         try:
             await player.set_pause(new_pause_state)
         except Exception as e:
-            logging.error(f"Toggle error: {e}")
+            logging.error("Toggle error: %s", e)
             return Error("Failed to toggle pause/resume.")
 
         action = "Paused" if new_pause_state else "Resumed"
-        self.set_latest_action(f"{action} by {user.display_name}")
+        self.set_latest_action(guild.id, f"{action} by {user.display_name}")
         await self.update_setup_embed(guild, player)
         return Success(f"{action} the current track.")
 
+    @ensure_voice
     async def handle_disconnect_action(
         self,
         interaction: discord.Interaction,
@@ -589,7 +678,7 @@ class Bot(commands.Bot):
         if not guild.voice_client:
             return Error("🚫 I’m not connected to any voice channel.")
         try:
-            self.set_latest_action(f"Disconnected by {user.display_name}")
+            self.set_latest_action(guild.id, f"Disconnected by {user.display_name}")
             active_player = player or self.get_player(guild.id)
             if active_player:
                 active_player.queue.clear()
@@ -597,8 +686,8 @@ class Bot(commands.Bot):
             await guild.voice_client.disconnect(force=True)
 
         except Exception as e:
-            logging.error(f"Disconnect error: {e}")
-            return "Failed to disconnect the player."
+            logging.error("Disconnect error: %s", e)
+            return Error("Failed to disconnect the player.")
 
         await self.update_setup_embed(
             guild,
@@ -616,7 +705,7 @@ class Bot(commands.Bot):
             ),
         )
 
-        return "Disconnected the player."
+        return Success("Disconnected the player.")
 
     @ensure_voice
     async def handle_shuffle_action(
@@ -630,11 +719,11 @@ class Bot(commands.Bot):
             return Error("No active player or the queue is empty.")
         try:
             random.shuffle(player.queue)
-            self.set_latest_action(f"Shuffled by {user.display_name}")
+            self.set_latest_action(guild.id, f"Shuffled by {user.display_name}")
             await self.update_setup_embed(guild, player)
             return Success("The queue has been shuffled!")
         except Exception as e:
-            logging.error(f"Shuffle error: {e}")
+            logging.error("Shuffle error: %s", e)
             return Error("Failed to shuffle the queue.")
 
     async def handle_queue_action(
@@ -673,12 +762,13 @@ class Bot(commands.Bot):
         try:
             await player.seek(new_pos)
             self.set_latest_action(
+                guild.id,
                 f"Forwarded {seconds}s by {user.display_name}", persist=True
             )
             await self.update_setup_embed(guild, player)
             return Success(f"⏩ Forwarded {seconds} seconds.")
         except Exception as e:
-            logging.error(f"Forward error: {e}")
+            logging.error("Forward error: %s", e)
             return Error("Failed to forward playback.")
 
     @ensure_voice
@@ -696,17 +786,21 @@ class Bot(commands.Bot):
         try:
             if mode == 0:
                 await player.remove_filter(Timescale)
-                self.set_latest_action(f"Nightcore OFF by {user.display_name}")
+                self.set_latest_action(
+                    guild.id, f"Nightcore OFF by {user.display_name}"
+                )
                 msg = "Nightcore effect disabled."
             else:
                 await player.update_filter(Timescale, pitch=1.2, speed=1.1, rate=1.0)
-                self.set_latest_action(f"Nightcore ON by {user.display_name}")
+                self.set_latest_action(
+                    guild.id, f"Nightcore ON by {user.display_name}"
+                )
                 msg = "Nightcore effect enabled!"
 
             await self.update_setup_embed(guild, player)
             return Success(msg)
         except Exception as e:
-            logging.error(f"Filter update error: {e}")
+            logging.error("Filter update error: %s", e)
             return Error("Failed to update filters.")
 
     async def handle_stay_247_action(
@@ -789,7 +883,7 @@ class Bot(commands.Bot):
             logging.warning("Channel %s not found for guild %s", channel_id, guild.id)
             return
 
-        embed = await self._fetch_or_create_embed(channel, message_id, embed)
+        embed = await self._fetch_or_create_embed(channel, message_id, guild, embed)
         view = view or PlayerControlView(self, player)
         new_message_id, edited, original_message = (
             await self._update_or_replace_message(channel, message_id, embed, view)
@@ -808,17 +902,21 @@ class Bot(commands.Bot):
             )
         ):
             self.delete_message_tags.add(new_message_id)
-        self.set_latest_action("")
+        self.clear_latest_action(guild.id)
 
     async def _fetch_or_create_embed(
-        self, channel: discord.TextChannel, message_id: int, embed: discord.Embed | None = None
+        self,
+        channel: discord.TextChannel,
+        message_id: int,
+        guild: discord.Guild,
+        embed: discord.Embed | None = None,
     ) -> discord.Embed:
         """
         Attempts to retrieve the embed from a cached message.
         If not available, fetches the message, caches it, and returns its embed.
         If the message has no embed or an error occurs, returns a default embed.
         """
-        guild_id = channel.guild.id
+        guild_id = guild.id
         message = self.setup_message_cache.get(guild_id)
         if message is None:
             try:
@@ -831,8 +929,9 @@ class Bot(commands.Bot):
 
         if embed is None:
             embed = message.embeds[0] if message.embeds else self.create_default_embed()
-        if self.latest_action:
-            embed.set_footer(text=self.latest_action[LatestActionKeys.TEXT])
+        latest_action = self.latest_action.get(guild.id)
+        if latest_action:
+            embed.set_footer(text=latest_action.text)
         return embed
 
     async def _update_or_replace_message(
@@ -892,7 +991,7 @@ class Bot(commands.Bot):
 
         channel = guild.get_channel(channel_id)
         if channel is None:
-            logging.warning(f"Channel {channel_id} not found in guild {guild.id}")
+            logging.warning("Channel %s not found in guild %s", channel_id, guild.id)
             return
 
         msg = self.setup_message_cache.get(guild.id)
@@ -901,67 +1000,11 @@ class Bot(commands.Bot):
                 msg = await channel.fetch_message(message_id)
                 self.setup_message_cache[guild.id] = msg
             except Exception as e:
-                logging.error(f"Could not fetch setup message {message_id}: {e}")
+                logging.error("Could not fetch setup message %s: %s", message_id, e)
                 return
 
         try:
             new_msg = await msg.edit(view=view)
             self.setup_message_cache[guild.id] = new_msg
         except Exception as e:
-            logging.error(f"Failed to update buttons on setup message: {e}")
-
-
-class QueueView(discord.ui.View):
-    def __init__(
-        self, user: discord.User, tracks: List[lavalink.AudioTrack], page_size: int = 15
-    ):
-        super().__init__(timeout=120)
-        self.user = user
-        self.tracks = tracks
-
-        # --- PRECOMPUTE ALL PAGES AT INIT TIME ---
-        self.embeds: List[discord.Embed] = []
-        total_pages = (len(tracks) - 1) // page_size + 1
-        for page in range(total_pages):
-            start = page * page_size
-            chunk = tracks[start : start + page_size]
-
-            # build each page’s embed
-            lines = []
-            for i, track in enumerate(chunk, start=start + 1):
-                length = getattr(track, "duration", 0)
-                dur = f"{length//60000}:{(length%60000)//1000:02}"
-                lines.append(f"**{i}.** [{get_track_display_title(track)}]({track.uri}) — `{dur}`")
-
-            desc = (
-                f"Page {page+1}/{total_pages}\n"
-                f"Total tracks: {len(tracks)}\n\n" + "\n".join(lines)
-            )
-            embed = discord.Embed(
-                title="Queue", description=desc, color=discord.Color.purple()
-            )
-            self.embeds.append(embed)
-
-        # state
-        self.page = 0
-        self.prev.disabled = True
-        self.next.disabled = len(self.embeds) <= 1
-
-    def current_embed(self) -> discord.Embed:
-        return self.embeds[self.page]
-
-    # initial message will call .current_embed()
-
-    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary)
-    async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page -= 1
-        self.prev.disabled = self.page == 0
-        self.next.disabled = False
-        await interaction.response.edit_message(embed=self.current_embed(), view=self)
-
-    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary)
-    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page += 1
-        self.next.disabled = self.page >= len(self.embeds) - 1
-        self.prev.disabled = False
-        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+            logging.error("Failed to update buttons on setup message: %s", e)

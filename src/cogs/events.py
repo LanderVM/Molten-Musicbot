@@ -16,6 +16,7 @@ from lavalink.events import (
     TrackStartEvent,
     TrackStuckEvent,
 )
+from enums import SetupChannelKeys
 from utils import Error
 
 if TYPE_CHECKING:
@@ -64,8 +65,7 @@ class EventHandlers(commands.Cog):
         if not guild:
             return
 
-        if self.bot.latest_action and not self.bot.latest_action.get("persist", False):
-            self.bot.latest_action = None
+        self.bot.clear_latest_action(guild.id, only_non_persistent=True)
 
         embed = self.bot.create_now_playing_embed(event.track, guild)
         await self.bot.update_setup_embed(guild=guild, player=player, embed=embed)
@@ -106,7 +106,7 @@ class EventHandlers(commands.Cog):
             return
 
         setup_data = self.bot.setup_channels.get(message.guild.id, {})
-        if message.channel.id != setup_data.get("channel"):
+        if message.channel.id != setup_data.get(SetupChannelKeys.CHANNEL):
             return
 
         msg = await self.bot.handle_setup_play(message)
@@ -124,7 +124,12 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event,
         )
-        # await event.player.skip()
+        self.bot.set_latest_action(
+            event.player.guild_id,
+            "Skipped — track failed to load",
+            persist=True,
+        )
+        await event.player.skip()
 
     @lavalink.listener(TrackStuckEvent)
     async def on_lavalink_track_stuck(self, event: TrackStuckEvent):
@@ -133,7 +138,12 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event.threshold,
         )
-        # await event.player.skip()
+        self.bot.set_latest_action(
+            event.player.guild_id,
+            "Skipped — track got stuck",
+            persist=True,
+        )
+        await event.player.skip()
 
 
 async def setup(bot: commands.Bot):

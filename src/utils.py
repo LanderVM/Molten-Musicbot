@@ -52,7 +52,7 @@ def load_setup_channels() -> dict:
                 data = json.load(f)
             return {int(guild_id): info for guild_id, info in data.items()}
         except Exception as e:
-            logging.error(f"Failed to load setup channels: {e}")
+            logging.error("Failed to load setup channels: %s", e)
             return {}
     else:
         return {}
@@ -123,3 +123,9 @@ class Success:
 
     def __str__(self):
         return self.message
+
+
+@dataclass
+class LatestAction:
+    text: str
+    persist: bool = False
