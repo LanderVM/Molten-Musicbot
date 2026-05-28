@@ -164,7 +164,7 @@ class Bot(commands.Bot):
             guild = self.get_guild(guild_id)
             if not guild:
                 logging.warning(
-                    f"Guild {guild_id} not found. Removing from setup_channels."
+                    "Guild %s not found. Removing from setup_channels.", guild_id
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
                 continue
@@ -172,7 +172,7 @@ class Bot(commands.Bot):
             channel = guild.get_channel(channel_id)
             if not channel:
                 logging.warning(
-                    f"Channel {channel_id} not found in guild {guild_id}. Removing from setup_channels."
+                    "Channel %s not found in guild %s. Removing from setup_channels.", channel_id, guild_id
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
                 continue
@@ -183,7 +183,7 @@ class Bot(commands.Bot):
                 logging.info("Cached setup message for guild %s.", guild_id)
             except Exception as e:
                 logging.warning(
-                    f"Error fetching setup message for guild {guild_id}: {e}. Removing from setup_channels."
+                    "Error fetching setup message for guild %s: %s. Removing from setup_channels.", guild_id, e
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
                 continue
@@ -195,7 +195,7 @@ class Bot(commands.Bot):
                     self.dj_roles[guild_id] = dj_role
                 else:
                     logging.warning(
-                        f"DJ role with ID {role_id} not found in guild {guild_id}. Removing from setup_channels."
+                        "DJ role with ID %s not found in guild %s. Removing from setup_channels.", role_id, guild_id
                     )
                     del data[SetupChannelKeys.DJ_ROLE]
                     asyncio.create_task(save_setup_channels_async(self.setup_channels))
@@ -254,7 +254,7 @@ class Bot(commands.Bot):
                 )
                 await channel.set_permissions(dj_role, overwrite=dj_overwrites)
                 logging.info(
-                    f"Updated permissions for existing DJ role in guild {guild.id}."
+                    "Updated permissions for existing DJ role in guild %s.", guild.id
                 )
 
             return f"Music channel created: {channel.mention}"
