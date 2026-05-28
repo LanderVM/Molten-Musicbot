@@ -1008,3 +1008,13 @@ class Bot(commands.Bot):
             self.setup_message_cache[guild.id] = new_msg
         except Exception as e:
             logging.error("Failed to update buttons on setup message: %s", e)
+
+    async def close(self) -> None:
+        """Gracefully shut down Lavalink and the bot."""
+        if self.lavalink:
+            try:
+                await self.lavalink.close()
+                logging.info("Lavalink client closed.")
+            except Exception as e:
+                logging.warning("Error closing Lavalink: %s", e)
+        await super().close()
