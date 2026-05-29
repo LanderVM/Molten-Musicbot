@@ -41,7 +41,7 @@ class Bot(commands.Bot):
         intents.guilds = True
         logging_level = (
             logging.DEBUG
-            if os.getenv(EnvironmentKeys.LOG_LEVEL).lower() == "debug"
+            if os.getenv(EnvironmentKeys.LOG_LEVEL, "INFO").lower() == "debug"
             else logging.INFO
         )
         discord.utils.setup_logging(level=logging_level)
@@ -98,6 +98,10 @@ class Bot(commands.Bot):
         lavalink_host = os.getenv(EnvironmentKeys.LAVALINK_HOST)
         lavalink_port_raw = os.getenv(EnvironmentKeys.LAVALINK_PORT)
         lavalink_password = os.getenv(EnvironmentKeys.LAVALINK_PASSWORD)
+        try:
+            self.bot_volume = int(os.getenv(EnvironmentKeys.BOT_VOLUME, "100"))
+        except ValueError:
+            raise RuntimeError("Invalid BOT_VOLUME value: must be an integer.")
 
         missing = [
             name
@@ -559,11 +563,11 @@ class Bot(commands.Bot):
             msg = f"Added **`{get_track_display_title(track)}`** to the queue."
 
         if not player.is_playing:
-            await player.play(volume=int(os.getenv(EnvironmentKeys.BOT_VOLUME, "100")))
-
-        asyncio.create_task(
-            self.update_setup_buttons(guild, PlayerControlView(self, player))
-        )
+            await player.play(volume=self.bot_volume)
+        else:
+            asyncio.create_task(
+                self.update_setup_buttons(guild, PlayerControlView(self, player))
+            )
 
         return Success(msg)
 

@@ -73,6 +73,8 @@ The bot and Lavalink will start automatically.
 If you ever need to update the bot, run the above steps 1-4 again and use this command to update:
 
 ```bash
+docker compose down
+docker compose build --no-cache
 docker compose up -d --force-recreate --pull always
 ```
 
