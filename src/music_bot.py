@@ -5,7 +5,7 @@ import random
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import List, cast
+from typing import cast
 
 import discord
 from discord.ext import commands
@@ -176,7 +176,9 @@ class Bot(commands.Bot):
             channel = guild.get_channel(channel_id)
             if not channel:
                 logging.warning(
-                    "Channel %s not found in guild %s. Removing from setup_channels.", channel_id, guild_id
+                    "Channel %s not found in guild %s. Removing from setup_channels.",
+                    channel_id,
+                    guild_id,
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
                 continue
@@ -187,7 +189,9 @@ class Bot(commands.Bot):
                 logging.info("Cached setup message for guild %s.", guild_id)
             except Exception as e:
                 logging.warning(
-                    "Error fetching setup message for guild %s: %s. Removing from setup_channels.", guild_id, e
+                    "Error fetching setup message for guild %s: %s. Removing from setup_channels.",
+                    guild_id,
+                    e,
                 )
                 remove_setup_channel(guild_id, self.setup_channels)
                 continue
@@ -199,7 +203,9 @@ class Bot(commands.Bot):
                     self.dj_roles[guild_id] = dj_role
                 else:
                     logging.warning(
-                        "DJ role with ID %s not found in guild %s. Removing from setup_channels.", role_id, guild_id
+                        "DJ role with ID %s not found in guild %s. Removing from setup_channels.",
+                        role_id,
+                        guild_id,
                     )
                     del data[SetupChannelKeys.DJ_ROLE]
                     asyncio.create_task(save_setup_channels_async(self.setup_channels))
@@ -269,7 +275,9 @@ class Bot(commands.Bot):
         self, track: lavalink.AudioTrack, guild: discord.Guild
     ) -> discord.Embed:
         embed = discord.Embed(
-            title=get_track_display_title(track), url=track.uri, color=discord.Color.blue()
+            title=get_track_display_title(track),
+            url=track.uri,
+            color=discord.Color.blue(),
         )
         embed.set_author(
             name="Now Playing",
@@ -766,8 +774,7 @@ class Bot(commands.Bot):
         try:
             await player.seek(new_pos)
             self.set_latest_action(
-                guild.id,
-                f"Forwarded {seconds}s by {user.display_name}", persist=True
+                guild.id, f"Forwarded {seconds}s by {user.display_name}", persist=True
             )
             await self.update_setup_embed(guild, player)
             return Success(f"⏩ Forwarded {seconds} seconds.")
@@ -796,9 +803,7 @@ class Bot(commands.Bot):
                 msg = "Nightcore effect disabled."
             else:
                 await player.update_filter(Timescale, pitch=1.2, speed=1.1, rate=1.0)
-                self.set_latest_action(
-                    guild.id, f"Nightcore ON by {user.display_name}"
-                )
+                self.set_latest_action(guild.id, f"Nightcore ON by {user.display_name}")
                 msg = "Nightcore effect enabled!"
 
             await self.update_setup_embed(guild, player)
@@ -932,7 +937,11 @@ class Bot(commands.Bot):
                 return self.create_default_embed(guild)
 
         if embed is None:
-            embed = message.embeds[0] if message.embeds else self.create_default_embed(guild)
+            embed = (
+                message.embeds[0]
+                if message.embeds
+                else self.create_default_embed(guild)
+            )
         latest_action = self.latest_action.get(guild.id)
         if latest_action:
             embed.set_footer(text=latest_action.text)

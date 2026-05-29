@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from enums import SetupChannelKeys
-from utils import Error, get_track_display_title
+from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -36,7 +36,9 @@ class MusicCommands(commands.Cog):
             if interaction.response.is_done():
                 await interaction.followup.send(msg, ephemeral=True)
             else:
-                await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+                await interaction.response.send_message(
+                    msg, ephemeral=True, delete_after=5
+                )
         except Exception:
             pass  # if even the error message fails, don't crash the task
 

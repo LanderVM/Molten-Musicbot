@@ -10,6 +10,7 @@ from discord.ext import commands
 
 import lavalink
 from cogs.buttons import ControlButton, PlayerControlView
+from enums import SetupChannelKeys
 from lavalink.events import (
     NodeReadyEvent,
     PlayerErrorEvent,
@@ -17,9 +18,7 @@ from lavalink.events import (
     TrackStartEvent,
     TrackStuckEvent,
 )
-from enums import SetupChannelKeys
 from utils import Error, save_setup_channels_async
-
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -125,12 +124,12 @@ class EventHandlers(commands.Cog):
         guild_id = role.guild.id
         setup_data = self.bot.setup_channels.get(guild_id, {})
         dj_role_id = setup_data.get(SetupChannelKeys.DJ_ROLE)
-        
+
         if role.id == dj_role_id:
             del setup_data[SetupChannelKeys.DJ_ROLE]
             self.bot.setup_channels[guild_id] = setup_data
             self.bot.dj_roles.pop(guild_id, None)
-            
+
             asyncio.create_task(save_setup_channels_async(self.bot.setup_channels))
             logging.info("DJ role deleted for guild %s, cache cleaned.", guild_id)
 
