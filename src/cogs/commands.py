@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import discord
@@ -11,6 +12,14 @@ from utils import Error
 
 if TYPE_CHECKING:
     from music_bot import Bot
+
+
+async def _delete_after(m: discord.WebhookMessage, delay: float) -> None:
+    await asyncio.sleep(delay)
+    try:
+        await m.delete()
+    except discord.NotFound:
+        pass
 
 
 class MusicCommands(commands.Cog):
@@ -25,9 +34,10 @@ class MusicCommands(commands.Cog):
     async def _run_player_action(
         self,
         interaction: discord.Interaction,
-        action: Callable[..., Awaitable[str]],
+        action: Callable[..., Awaitable[str | Error]],
         *extra_args: Any,
     ) -> None:
+        await interaction.response.defer(ephemeral=True)
         player = self.bot.get_player(interaction.guild.id)
         msg = await action(
             interaction,
@@ -36,7 +46,9 @@ class MusicCommands(commands.Cog):
             player,
             *extra_args,
         )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        message = await interaction.followup.send(str(msg), ephemeral=True)
+        asyncio.ensure_future(_delete_after(message, 5))
+
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -46,7 +58,6 @@ class MusicCommands(commands.Cog):
             msg = f"🚫 You need the `{missing}` permission(s) to use this command."
         else:
             msg = "❌ An error occurred while running the command."
-            raise error  # still re-raise for unexpected errors
 
         try:
             if interaction.response.is_done():
@@ -56,7 +67,11 @@ class MusicCommands(commands.Cog):
                     msg, ephemeral=True, delete_after=5
                 )
         except Exception:
-            pass  # if even the error message fails, don't crash the task
+            pass
+
+        # Re-raise AFTER sending, so the user always sees the message
+        if not isinstance(error, app_commands.MissingPermissions):
+            raise error
 
     def dj_role_required(interaction: discord.Interaction) -> bool:
         """
@@ -138,17 +153,17 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         page_size: app_commands.Range[int, 10, 25] = 20,
     ):
+        await interaction.response.defer(ephemeral=True)
         player = self.bot.get_player(interaction.guild.id)
         result = await self.bot.handle_queue_action(
             interaction, interaction.guild, interaction.user, player, page_size
         )
         if isinstance(result, Error):
-            await interaction.response.send_message(result, ephemeral=True)
+            await interaction.followup.send(str(result), ephemeral=True)
             return
         embed, view = result
-        await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=True, delete_after=120
-        )
+        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        asyncio.ensure_future(_delete_after(msg, 120))
 
     @app_commands.command(name="status", description="Show the current bot status.")
     async def status(self, interaction: discord.Interaction):
