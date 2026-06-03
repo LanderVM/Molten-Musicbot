@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Awaitable, TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Awaitable, List, Optional
 
 import discord
 from discord import Interaction

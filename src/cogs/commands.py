@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import discord
 from discord import app_commands
@@ -51,7 +51,9 @@ class MusicCommands(commands.Cog):
             if interaction.response.is_done():
                 await interaction.followup.send(msg, ephemeral=True)
             else:
-                await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+                await interaction.response.send_message(
+                    msg, ephemeral=True, delete_after=5
+                )
         except Exception:
             pass
 

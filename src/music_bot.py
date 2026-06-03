@@ -877,10 +877,8 @@ class Bot(commands.Bot):
             embed.set_footer(text=latest_action.text)
 
         view = view or PlayerControlView(self, player)
-        new_message_id, edited, original_message = (
-            await self._upsert_setup_message(
-                channel, message_id, message, embed, view
-            )
+        new_message_id, edited, original_message = await self._upsert_setup_message(
+            channel, message_id, message, embed, view
         )
         setup_data[SetupChannelKeys.MESSAGE] = new_message_id
         asyncio.create_task(save_setup_channels_async(self.setup_channels))
