@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 
 import lavalink
-from cogs.buttons import ControlButton, PlayerControlView
+from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView
 from enums import SetupChannelKeys
 from lavalink.events import (
     NodeReadyEvent,
@@ -90,12 +90,7 @@ class EventHandlers(commands.Cog):
                 view=PlayerControlView(
                     self.bot,
                     player,
-                    disabled_buttons=[
-                        ControlButton.STOP,
-                        ControlButton.PAUSE_RESUME,
-                        ControlButton.SKIP,
-                        ControlButton.SHUFFLE,
-                    ],
+                    disabled_buttons=IDLE_DISABLED_BUTTONS,
                 ),
             )
         except Exception as e:

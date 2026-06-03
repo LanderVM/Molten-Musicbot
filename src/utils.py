@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -106,6 +107,29 @@ def format_duration(ms: int) -> str:
     if hours > 0:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes}:{seconds:02d}"
+
+
+def format_duration_mm_ss(ms: int) -> str:
+    """Formats milliseconds as MM:SS for compact queue display."""
+    seconds = ms // 1000
+    minutes, seconds = divmod(seconds, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def format_uptime(uptime: timedelta) -> str:
+    """Formats timedelta as a compact uptime string (e.g. 2d 3h 4m 5s)."""
+    days = uptime.days
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    if minutes or hours or days:
+        parts.append(f"{minutes}m")
+    parts.append(f"{seconds}s")
+    return " ".join(parts)
 
 
 @dataclass

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional
+from typing import Awaitable, TYPE_CHECKING, List, Optional
 
 import discord
 from discord import Interaction
 from discord.ui import Button, View, button
 
 import lavalink
-from utils import Error, get_track_display_title
+from utils import Error, format_duration_mm_ss, get_track_display_title
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -21,6 +21,14 @@ class ControlButton(Enum):
     PAUSE_RESUME = "control_pause_resume"
     SKIP = "control_skip"
     SHUFFLE = "control_shuffle"
+
+
+IDLE_DISABLED_BUTTONS = (
+    ControlButton.STOP,
+    ControlButton.PAUSE_RESUME,
+    ControlButton.SKIP,
+    ControlButton.SHUFFLE,
+)
 
 
 class PlayerControlView(View):
@@ -61,45 +69,50 @@ class PlayerControlView(View):
             if child.custom_id in disabled_ids:
                 child.disabled = True
 
-    @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
-    async def stop_button(self, interaction: Interaction, button: Button):
-        msg = await self.bot.handle_stop_action(
-            interaction, interaction.guild, interaction.user, self.player
-        )
+    async def _handle_control_action(
+        self, interaction: Interaction, action: Awaitable[object]
+    ) -> None:
+        msg = await action
         if isinstance(msg, Error):
             await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
-        else:
-            await interaction.response.defer()
+            return
+        await interaction.response.defer()
+
+    @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
+    async def stop_button(self, interaction: Interaction, button: Button):
+        await self._handle_control_action(
+            interaction,
+            self.bot.handle_stop_action(
+                interaction, interaction.guild, interaction.user, self.player
+            ),
+        )
 
     @button(emoji="⏸️", custom_id=ControlButton.PAUSE_RESUME.value)
     async def pause_button(self, interaction: Interaction, button: Button):
-        msg = await self.bot.handle_toggle_action(
-            interaction, interaction.guild, interaction.user, self.player
+        await self._handle_control_action(
+            interaction,
+            self.bot.handle_toggle_action(
+                interaction, interaction.guild, interaction.user, self.player
+            ),
         )
-        if isinstance(msg, Error):
-            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
-        else:
-            await interaction.response.defer()
 
     @button(emoji="⏭️", custom_id=ControlButton.SKIP.value)
     async def skip_button(self, interaction: Interaction, button: Button):
-        msg = await self.bot.handle_skip_action(
-            interaction, interaction.guild, interaction.user, self.player
+        await self._handle_control_action(
+            interaction,
+            self.bot.handle_skip_action(
+                interaction, interaction.guild, interaction.user, self.player
+            ),
         )
-        if isinstance(msg, Error):
-            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
-        else:
-            await interaction.response.defer()
 
     @button(emoji="🔀", custom_id=ControlButton.SHUFFLE.value)
     async def shuffle_button(self, interaction: Interaction, button: Button):
-        msg = await self.bot.handle_shuffle_action(
-            interaction, interaction.guild, interaction.user, self.player
+        await self._handle_control_action(
+            interaction,
+            self.bot.handle_shuffle_action(
+                interaction, interaction.guild, interaction.user, self.player
+            ),
         )
-        if isinstance(msg, Error):
-            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
-        else:
-            await interaction.response.defer()
 
 
 class QueueView(View):
@@ -119,7 +132,7 @@ class QueueView(View):
             lines = []
             for i, track in enumerate(chunk, start=start + 1):
                 length = getattr(track, "duration", 0)
-                dur = f"{length//60000}:{(length%60000)//1000:02}"
+                dur = format_duration_mm_ss(length)
                 lines.append(
                     f"**{i}.** [{get_track_display_title(track)}]({track.uri}) — `{dur}`"
                 )

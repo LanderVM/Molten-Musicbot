@@ -12,7 +12,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import lavalink
-from cogs.buttons import ControlButton, PlayerControlView, QueueView
+from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView, QueueView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, SetupChannelKeys
 from lavalink import LoadType
@@ -23,6 +23,7 @@ from utils import (
     LatestAction,
     Success,
     format_duration,
+    format_uptime,
     get_track_display_title,
     load_setup_channels,
     remove_setup_channel,
@@ -347,19 +348,6 @@ class Bot(commands.Bot):
         else:
             setup_value = "Unknown"
 
-        # Uptime
-        days = uptime.days
-        hours, remainder = divmod(uptime.seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        uptime_parts = []
-        if days:
-            uptime_parts.append(f"{days}d")
-        if hours or days:
-            uptime_parts.append(f"{hours}h")
-        if minutes or hours or days:
-            uptime_parts.append(f"{minutes}m")
-        uptime_parts.append(f"{seconds}s")
-
         embed = discord.Embed(
             title="Bot Status",
             color=discord.Color.green() if lavalink_ok else discord.Color.red(),
@@ -380,7 +368,7 @@ class Bot(commands.Bot):
             value=f"{queue_length} tracks remaining",
             inline=True,
         )
-        embed.add_field(name="Bot Uptime", value=" ".join(uptime_parts), inline=True)
+        embed.add_field(name="Bot Uptime", value=format_uptime(uptime), inline=True)
         embed.add_field(
             name="Setup Channel",
             value=setup_value,
@@ -608,12 +596,7 @@ class Bot(commands.Bot):
                 view=PlayerControlView(
                     self,
                     player,
-                    disabled_buttons=[
-                        ControlButton.STOP,
-                        ControlButton.PAUSE_RESUME,
-                        ControlButton.SKIP,
-                        ControlButton.SHUFFLE,
-                    ],
+                    disabled_buttons=IDLE_DISABLED_BUTTONS,
                 ),
             )
 
@@ -708,12 +691,7 @@ class Bot(commands.Bot):
             view=PlayerControlView(
                 self,
                 player,
-                disabled_buttons=[
-                    ControlButton.STOP,
-                    ControlButton.PAUSE_RESUME,
-                    ControlButton.SKIP,
-                    ControlButton.SHUFFLE,
-                ],
+                disabled_buttons=IDLE_DISABLED_BUTTONS,
             ),
         )
 
@@ -860,12 +838,7 @@ class Bot(commands.Bot):
                     view=PlayerControlView(
                         self,
                         player,
-                        disabled_buttons=[
-                            ControlButton.STOP,
-                            ControlButton.PAUSE_RESUME,
-                            ControlButton.SKIP,
-                            ControlButton.SHUFFLE,
-                        ],
+                        disabled_buttons=IDLE_DISABLED_BUTTONS,
                     ),
                 )
             await vc.disconnect()
@@ -892,10 +865,22 @@ class Bot(commands.Bot):
             logging.warning("Channel %s not found for guild %s", channel_id, guild.id)
             return
 
-        embed = await self._fetch_or_create_embed(channel, message_id, guild, embed)
+        message = await self._resolve_setup_message(channel, message_id, guild.id)
+        if embed is None:
+            embed = (
+                message.embeds[0]
+                if message and message.embeds
+                else self.create_default_embed(guild)
+            )
+        latest_action = self.latest_action.get(guild.id)
+        if latest_action:
+            embed.set_footer(text=latest_action.text)
+
         view = view or PlayerControlView(self, player)
         new_message_id, edited, original_message = (
-            await self._update_or_replace_message(channel, message_id, embed, view)
+            await self._upsert_setup_message(
+                channel, message_id, message, embed, view
+            )
         )
         setup_data[SetupChannelKeys.MESSAGE] = new_message_id
         asyncio.create_task(save_setup_channels_async(self.setup_channels))
@@ -913,44 +898,33 @@ class Bot(commands.Bot):
             self.delete_message_tags.add((guild.id, new_message_id))
         self.clear_latest_action(guild.id)
 
-    async def _fetch_or_create_embed(
+    async def _resolve_setup_message(
         self,
         channel: discord.TextChannel,
         message_id: int,
-        guild: discord.Guild,
-        embed: discord.Embed | None = None,
-    ) -> discord.Embed:
+        guild_id: int,
+    ) -> discord.Message | None:
         """
-        Attempts to retrieve the embed from a cached message.
-        If not available, fetches the message, caches it, and returns its embed.
-        If the message has no embed or an error occurs, returns a default embed.
+        Returns a cached setup message if available, otherwise fetches and caches it.
         """
-        guild_id = guild.id
         message = self.setup_message_cache.get(guild_id)
-        if message is None:
-            try:
-                message = await channel.fetch_message(message_id)
-                self.setup_message_cache[guild_id] = message
-                logging.info("Fetched and cached message for guild %s.", guild_id)
-            except Exception as e:
-                logging.error("Error fetching embed for guild %s: %s", guild_id, e)
-                return self.create_default_embed(guild)
+        if message is not None and message.id == message_id:
+            return message
 
-        if embed is None:
-            embed = (
-                message.embeds[0]
-                if message.embeds
-                else self.create_default_embed(guild)
-            )
-        latest_action = self.latest_action.get(guild.id)
-        if latest_action:
-            embed.set_footer(text=latest_action.text)
-        return embed
+        try:
+            message = await channel.fetch_message(message_id)
+            self.setup_message_cache[guild_id] = message
+            logging.info("Fetched and cached message for guild %s.", guild_id)
+            return message
+        except Exception as e:
+            logging.error("Error fetching setup message for guild %s: %s", guild_id, e)
+            return None
 
-    async def _update_or_replace_message(
+    async def _upsert_setup_message(
         self,
         channel: discord.TextChannel,
         message_id: int,
+        message: discord.Message | None,
         embed: discord.Embed,
         view: discord.ui.View,
     ) -> tuple[int, bool, discord.Message | None]:
@@ -964,20 +938,22 @@ class Bot(commands.Bot):
             message (discord.Message | None): The updated (or new) message object.
         """
         guild_id = channel.guild.id
-        message = self.setup_message_cache.get(guild_id)
         try:
-            if message is None:
-                message = await channel.fetch_message(message_id)
-            if (guild_id, message_id) in self.delete_message_tags:
+            if message and (guild_id, message_id) in self.delete_message_tags:
                 await message.delete()
                 self.delete_message_tags.discard((guild_id, message_id))
                 new_message = await channel.send(embed=embed, view=view)
                 self.setup_message_cache[guild_id] = new_message
                 return new_message.id, False, new_message
-            else:
+
+            if message:
                 new_message = await message.edit(embed=embed, view=view)
                 self.setup_message_cache[guild_id] = new_message
                 return message_id, True, new_message
+
+            new_message = await channel.send(embed=embed, view=view)
+            self.setup_message_cache[guild_id] = new_message
+            return new_message.id, False, new_message
         except discord.NotFound:
             new_message = await channel.send(embed=embed, view=view)
             self.setup_message_cache[guild_id] = new_message
