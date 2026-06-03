@@ -751,6 +751,9 @@ class Bot(commands.Bot):
     ) -> str:
         if not player or not player.is_playing or not player.current:
             return Error("No track is currently playing.")
+        
+        if getattr(player.current, "stream", False):
+            return Error("Cannot forward in a live stream.")
 
         new_pos = player.position + (seconds * 1000)
         if new_pos >= player.current.duration:
