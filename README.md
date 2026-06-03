@@ -143,7 +143,7 @@ In your Discord server, you can use the following commands to control the bot:
 
 ### Troubleshooting
 
-- If the bot can’t play songs from certain sources anymore, but could play them before, turn of the bot `docker compose down` and then restart it using `docker compose up -d`.
+- If the bot can’t play songs from certain sources anymore, but could play them before, turn off the bot with `docker compose down` and then restart it using `docker compose up -d`.
 - Make sure you are connected to a voice channel before trying to play music.
 - Ensure your Lavalink V4 server is running and accessible.
 - If you get errors related to missing dependencies, make sure you have all packages installed from `requirements.txt`.

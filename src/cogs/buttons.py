@@ -133,9 +133,10 @@ class QueueView(View):
             for i, track in enumerate(chunk, start=start + 1):
                 length = getattr(track, "duration", 0)
                 dur = format_duration_mm_ss(length)
-                lines.append(
-                    f"**{i}.** [{get_track_display_title(track)}]({track.uri}) — `{dur}`"
-                )
+                title = get_track_display_title(track)
+                uri = getattr(track, "uri", None)
+                track_text = f"[{title}]({uri})" if uri else title
+                lines.append(f"**{i}.** {track_text} — `{dur}`")
 
             desc = (
                 f"Page {page+1}/{total_pages}\n"
