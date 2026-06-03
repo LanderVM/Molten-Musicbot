@@ -1,0 +1,81 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Molten Musicbot
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea to make Molten Musicbot better? Fill out the sections below and we'll take a look!
+
+        > **⚠️ Please read before submitting**
+        > Molten Musicbot is intentionally kept simple. The goal is a clean, no-fuss music bot that works well for most people — not a feature-packed bot with every option Lavalink can offer.
+        > 
+        > Feature requests are welcome, but only features that meaningfully improve the experience for the majority of users are likely to be implemented. Niche, highly specific, or power-user features will generally not be added regardless of technical feasibility.
+        > 
+        > If you're unsure whether your idea fits, still feel free to submit it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Is your request related to something that's currently missing or frustrating? Explain the "why" behind the feature.
+      placeholder: |
+        e.g. There is no way to shuffle a large playlist. When entering a URL into the bot, the same songs always play first, which makes it annoying to listen to playlists with 100+ songs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the feature
+      description: What would you like to see added or changed? Be as specific as you can.
+      placeholder: |
+        e.g. A /shuffle command that randomizes the order of the current queue. It could be used after adding a playlist to mix up the songs.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: What area of the bot does this relate to?
+      options:
+        - Playback (play, skip, stop, seek, etc.)
+        - Queue management
+        - Player controls (buttons / UI)
+        - Setup & configuration
+        - Permissions / DJ role
+        - Commands
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Have you tried working around this in another way? Are there other approaches that could work?
+      placeholder: |
+        e.g. I use the YouTube shuffle feature, but this is platform-specific and doesn't work for large queues or different sources like Spotify.
+    validations:
+      required: false
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Mockups / Examples
+      description: |
+        Optionally attach a screenshot, sketch, or link to another bot/tool that does something similar.
+        Drag and drop files here, or paste an image directly.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this hasn't been requested yet
+          required: true
+        - label: This is a feature request, not a bug report
+          required: true
