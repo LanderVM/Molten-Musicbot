@@ -1,0 +1,119 @@
+name: 🐛 Bug Report
+description: Something is broken or not working as expected
+labels: ["bug", "needs triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below as completely as you can.
+        The more detail you provide, the faster we can track down and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. What did you expect to happen vs what actually happened?
+      placeholder: |
+        Expected: The bot should skip to the next track when I press the skip button.
+        Actual: The bot disconnects from the voice channel instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Walk us through exactly how to trigger the bug.
+      placeholder: |
+        1. Join a voice channel
+        2. Use /play to queue 2+ songs
+        3. Press the skip button
+        4. Bot disconnects instead of skipping
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does this happen?
+      options:
+        - Every time (consistent)
+        - Most of the time
+        - Sometimes / randomly
+        - Only happened once
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Paste the relevant log output here. 
+
+        > ⚠️ **Before grabbing logs, make sure your `.env` has `LOG_LEVEL = DEBUG` set** — this gives much more detail and makes it significantly easier to diagnose the issue.
+        > Restart the bot after changing this setting.
+
+        Trim to the relevant section if it's very long, but include a few lines before and after the error.
+      render: text
+      placeholder: |
+        2024-01-15 14:32:01 [DEBUG] Received interaction: skip_button (guild=123456)
+        2024-01-15 14:32:01 [ERROR] ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots / Video
+      description: |
+        If applicable, attach a screenshot or screen recording showing the issue.
+        Drag and drop files here, or paste an image directly.
+        For audio/playback issues a short clip is especially helpful.
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Fill in your setup details.
+      value: |
+        - Molten Musicbot version (or commit hash): 
+        - Python version (`python --version`): 
+        - discord.py version (`pip show discord.py`): 
+        - Lavalink version: 
+        - OS / hosting platform (e.g. Ubuntu 22.04, Windows 11, Raspberry Pi): 
+        - Java version (`java -version`):
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: |
+        If relevant, share any non-sensitive parts of your config.
+        **Never paste your bot token, client secret, or passwords here.**
+        You can share things like `VOLUME`, `LOG_LEVEL`, Lavalink node settings, etc.
+      render: env
+      placeholder: |
+        LOG_LEVEL = DEBUG
+        BOT_VOLUME = 100
+        LAVALINK_HOST = localhost
+        LAVALINK_PORT = 2333
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this hasn't been reported yet
+          required: true
+        - label: I set `LOG_LEVEL = DEBUG` in my `.env` and restarted the bot before grabbing logs
+          required: false
+        - label: I am running the latest version of Molten Musicbot
+          required: false
