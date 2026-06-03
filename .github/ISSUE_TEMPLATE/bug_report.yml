@@ -1,6 +1,6 @@
-name: 🐛 Bug Report
+name: Bug Report
 description: Something is broken or not working as expected
-labels: ["bug", "needs triage"]
+labels: ["bug"]
 
 body:
   - type: markdown
@@ -50,7 +50,7 @@ body:
     attributes:
       label: Logs
       description: |
-        Paste the relevant log output here. 
+        Paste the relevant log output here for Molten Musicbot & Lavalink.
 
         > ⚠️ **Before grabbing logs, make sure your `.env` has `LOG_LEVEL = DEBUG` set** — this gives much more detail and makes it significantly easier to diagnose the issue.
         > Restart the bot after changing this setting.
@@ -58,8 +58,12 @@ body:
         Trim to the relevant section if it's very long, but include a few lines before and after the error.
       render: text
       placeholder: |
-        2024-01-15 14:32:01 [DEBUG] Received interaction: skip_button (guild=123456)
-        2024-01-15 14:32:01 [ERROR] ...
+        Molten:
+          2024-01-15 14:32:01 [DEBUG] Received interaction: skip_button (guild=123456)
+          2024-01-15 14:32:01 [ERROR] ...
+
+        Lavalink:
+          WARNING: ...
     validations:
       required: false
 
@@ -82,10 +86,8 @@ body:
       value: |
         - Molten Musicbot version (or commit hash): 
         - Python version (`python --version`): 
-        - discord.py version (`pip show discord.py`): 
-        - Lavalink version: 
-        - OS / hosting platform (e.g. Ubuntu 22.04, Windows 11, Raspberry Pi): 
-        - Java version (`java -version`):
+        - Lavalink version:
+        - OS / hosting platform (e.g. Ubuntu 22.04, Windows 11, Raspberry Pi):
     validations:
       required: true
 
