@@ -25,7 +25,7 @@ class MusicCommands(commands.Cog):
     async def _run_player_action(
         self,
         interaction: discord.Interaction,
-        action: Callable[..., Awaitable[str | Error]],
+        action: Callable[..., Awaitable[str]],
         *extra_args: Any,
     ) -> None:
         player = self.bot.get_player(interaction.guild.id)
@@ -46,6 +46,7 @@ class MusicCommands(commands.Cog):
             msg = f"🚫 You need the `{missing}` permission(s) to use this command."
         else:
             msg = "❌ An error occurred while running the command."
+            raise error  # still re-raise for unexpected errors
 
         try:
             if interaction.response.is_done():
@@ -55,11 +56,7 @@ class MusicCommands(commands.Cog):
                     msg, ephemeral=True, delete_after=5
                 )
         except Exception:
-            pass
-
-        # Re-raise AFTER sending, so the user always sees the message
-        if not isinstance(error, app_commands.MissingPermissions):
-            raise error
+            pass  # if even the error message fails, don't crash the task
 
     def dj_role_required(interaction: discord.Interaction) -> bool:
         """
