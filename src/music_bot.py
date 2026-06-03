@@ -496,7 +496,14 @@ class Bot(commands.Bot):
 
     async def handle_setup_play(self, message: discord.Message) -> str:
         asyncio.create_task(self._delayed_delete(message, delay=0.2))
-
+        # Mirror the DJ role check from the slash command
+        setup_data = self.setup_channels.get(message.guild.id, {})
+        dj_role_id = setup_data.get(SetupChannelKeys.DJ_ROLE)
+        if dj_role_id:
+            dj_role = message.guild.get_role(dj_role_id)
+            if dj_role and dj_role not in message.author.roles:
+                return Error("🚫 You need the DJ role to request songs.")
+        
         return await self.handle_play_action(
             message,
             message.guild,
