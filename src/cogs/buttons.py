@@ -42,6 +42,7 @@ class PlayerControlView(View):
         player: Optional[lavalink.DefaultPlayer],
         disabled_buttons: List[ControlButton] = None,
         *,
+        paused_override: Optional[bool] = None,
         timeout: float = None,
     ):
         super().__init__(timeout=timeout)
@@ -58,7 +59,12 @@ class PlayerControlView(View):
             if self.player is None:
                 child.disabled = True
             elif child.custom_id == ControlButton.PAUSE_RESUME.value:
-                child.emoji = "▶️" if self.player.paused else "⏸️"
+                is_paused = (
+                    paused_override
+                    if paused_override is not None
+                    else self.player.paused
+                )
+                child.emoji = "▶️" if is_paused else "⏸️"
             elif (
                 len(self.player.queue) <= 1
                 and child.custom_id == ControlButton.SHUFFLE.value

@@ -69,7 +69,16 @@ class EventHandlers(commands.Cog):
         self.bot.clear_latest_action(guild.id, only_non_persistent=True)
 
         embed = self.bot.create_now_playing_embed(event.track, guild)
-        await self.bot.update_setup_embed(guild=guild, player=player, embed=embed)
+        await self.bot.update_setup_embed(
+            guild=guild,
+            player=player,
+            embed=embed,
+            view=PlayerControlView(
+                self.bot,
+                player,
+                paused_override=False,
+            ),
+        )
 
     @lavalink.listener(QueueEndEvent)
     async def on_lavalink_queue_end(self, event: QueueEndEvent):
