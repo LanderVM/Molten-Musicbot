@@ -34,6 +34,12 @@ git clone https://github.com/LanderVM/Molten-Musicbot.git
 cd Molten-Musicbot
 ```
 
+If on Linux also run (Not needed for Windows users):
+
+```bash
+sudo chown -R 1000:1000 lavalink/plugins
+```
+
 ### 2. Set Up Environment Variables
 
 Copy the `.env.example` file and rename it to `.env`.
