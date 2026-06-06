@@ -100,6 +100,7 @@ class EventHandlers(commands.Cog):
                     self.bot,
                     player,
                     disabled_buttons=IDLE_DISABLED_BUTTONS,
+                    paused_override=False,
                 ),
             )
         except Exception as e:

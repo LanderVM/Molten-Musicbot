@@ -604,6 +604,7 @@ class Bot(commands.Bot):
                     self,
                     player,
                     disabled_buttons=IDLE_DISABLED_BUTTONS,
+                    paused_override=False
                 ),
             )
 
@@ -699,6 +700,7 @@ class Bot(commands.Bot):
                 self,
                 player,
                 disabled_buttons=IDLE_DISABLED_BUTTONS,
+                paused_override=False
             ),
         )
 
@@ -849,6 +851,7 @@ class Bot(commands.Bot):
                         self,
                         player,
                         disabled_buttons=IDLE_DISABLED_BUTTONS,
+                        paused_override=False
                     ),
                 )
             await vc.disconnect()
