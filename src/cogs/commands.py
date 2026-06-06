@@ -37,6 +37,11 @@ class MusicCommands(commands.Cog):
         action: Callable[..., Awaitable[str | Error]],
         *extra_args: Any,
     ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         player = self.bot.get_player(interaction.guild.id)
         msg = await action(

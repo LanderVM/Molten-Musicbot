@@ -681,24 +681,26 @@ class Bot(commands.Bot):
         if not guild.voice_client:
             return Error("🚫 I’m not connected to any voice channel.")
         try:
-            self.set_latest_action(guild.id, f"Disconnected by {user.display_name}")
             active_player = player or self.get_player(guild.id)
             if active_player:
                 active_player.queue.clear()
                 await active_player.stop()
+        except Exception as e:
+            logging.error("Stop error during disconnect: %s", e)
+        # Disconnect regardless of whether stop succeeded
+        try:
             await guild.voice_client.disconnect(force=True)
-
         except Exception as e:
             logging.error("Disconnect error: %s", e)
             return Error("Failed to disconnect the player.")
 
         await self.update_setup_embed(
             guild,
-            player,
+            active_player,
             embed=self.create_default_embed(guild),
             view=PlayerControlView(
                 self,
-                player,
+                active_player,
                 disabled_buttons=IDLE_DISABLED_BUTTONS,
                 paused_override=False
             ),
