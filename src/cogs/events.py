@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
 
 import lavalink
-from cogs.buttons import ControlButton, PlayerControlView
+from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView
+from enums import SetupChannelKeys
 from lavalink.events import (
     NodeReadyEvent,
     PlayerErrorEvent,
@@ -15,7 +18,7 @@ from lavalink.events import (
     TrackStartEvent,
     TrackStuckEvent,
 )
-from utils import Error
+from utils import Error, save_setup_channels_async
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -47,6 +50,8 @@ class EventHandlers(commands.Cog):
 
     @lavalink.listener(NodeReadyEvent)
     async def on_lavalink_node_ready(self, event: NodeReadyEvent):
+        self.bot.lavalink_ready = True
+        self.bot.lavalink_last_ready_at = datetime.now(timezone.utc)
         logging.info(
             "Lavalink node ready: %s | Session: %s | Resumed: %s",
             event.node,
@@ -61,11 +66,19 @@ class EventHandlers(commands.Cog):
         if not guild:
             return
 
-        if self.bot.latest_action and not self.bot.latest_action.get("persist", False):
-            self.bot.latest_action = None
+        self.bot.clear_latest_action(guild.id, only_non_persistent=True)
 
         embed = self.bot.create_now_playing_embed(event.track, guild)
-        await self.bot.update_setup_embed(guild=guild, player=player, embed=embed)
+        await self.bot.update_setup_embed(
+            guild=guild,
+            player=player,
+            embed=embed,
+            view=PlayerControlView(
+                self.bot,
+                player,
+                paused_override=False,
+            ),
+        )
 
     @lavalink.listener(QueueEndEvent)
     async def on_lavalink_queue_end(self, event: QueueEndEvent):
@@ -82,16 +95,12 @@ class EventHandlers(commands.Cog):
             await self.bot.update_setup_embed(
                 guild,
                 player,
-                embed=self.bot.create_default_embed(),
+                embed=self.bot.create_default_embed(guild),
                 view=PlayerControlView(
                     self.bot,
                     player,
-                    disabled_buttons=[
-                        ControlButton.STOP,
-                        ControlButton.PAUSE_RESUME,
-                        ControlButton.SKIP,
-                        ControlButton.SHUFFLE,
-                    ],
+                    disabled_buttons=IDLE_DISABLED_BUTTONS,
+                    paused_override=False,
                 ),
             )
         except Exception as e:
@@ -103,7 +112,7 @@ class EventHandlers(commands.Cog):
             return
 
         setup_data = self.bot.setup_channels.get(message.guild.id, {})
-        if message.channel.id != setup_data.get("channel"):
+        if message.channel.id != setup_data.get(SetupChannelKeys.CHANNEL):
             return
 
         msg = await self.bot.handle_setup_play(message)
@@ -114,6 +123,21 @@ class EventHandlers(commands.Cog):
     async def on_voice_state_update(self, member, before, after):
         await self.bot.check_voice_channel_empty_and_leave(member)
 
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role: discord.Role):
+        """Clean up stale DJ role cache when role is deleted."""
+        guild_id = role.guild.id
+        setup_data = self.bot.setup_channels.get(guild_id, {})
+        dj_role_id = setup_data.get(SetupChannelKeys.DJ_ROLE)
+
+        if role.id == dj_role_id:
+            del setup_data[SetupChannelKeys.DJ_ROLE]
+            self.bot.setup_channels[guild_id] = setup_data
+            self.bot.dj_roles.pop(guild_id, None)
+
+            asyncio.create_task(save_setup_channels_async(self.bot.setup_channels))
+            logging.info("DJ role deleted for guild %s, cache cleaned.", guild_id)
+
     @lavalink.listener(PlayerErrorEvent)
     async def on_lavalink_player_error(self, event: PlayerErrorEvent):
         logging.warning(
@@ -121,7 +145,12 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event,
         )
-        # await event.player.skip()
+        self.bot.set_latest_action(
+            event.player.guild_id,
+            "Skipped — track failed to load",
+            persist=True,
+        )
+        await event.player.skip()
 
     @lavalink.listener(TrackStuckEvent)
     async def on_lavalink_track_stuck(self, event: TrackStuckEvent):
@@ -130,7 +159,12 @@ class EventHandlers(commands.Cog):
             event.player.guild_id,
             event.threshold,
         )
-        # await event.player.skip()
+        self.bot.set_latest_action(
+            event.player.guild_id,
+            "Skipped — track got stuck",
+            persist=True,
+        )
+        await event.player.skip()
 
 
 async def setup(bot: commands.Bot):

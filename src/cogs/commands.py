@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+import asyncio
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import discord
 from discord import app_commands
@@ -13,6 +14,14 @@ if TYPE_CHECKING:
     from music_bot import Bot
 
 
+async def _delete_after(m: discord.WebhookMessage, delay: float) -> None:
+    await asyncio.sleep(delay)
+    try:
+        await m.delete()
+    except discord.NotFound:
+        pass
+
+
 class MusicCommands(commands.Cog):
     """
     A cog for music-related slash commands.
@@ -22,20 +31,51 @@ class MusicCommands(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot: Bot = bot
 
+    async def _run_player_action(
+        self,
+        interaction: discord.Interaction,
+        action: Callable[..., Awaitable[str | Error]],
+        *extra_args: Any,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        player = self.bot.get_player(interaction.guild.id)
+        msg = await action(
+            interaction,
+            interaction.guild,
+            interaction.user,
+            player,
+            *extra_args,
+        )
+        message = await interaction.followup.send(str(msg), ephemeral=True)
+        asyncio.ensure_future(_delete_after(message, 5))
+
+
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):
         if isinstance(error, app_commands.MissingPermissions):
             missing = ", ".join(error.missing_permissions)
-            await interaction.response.send_message(
-                f"🚫 You need the `{missing}` permission(s) to use this command.",
-                ephemeral=True,
-                delete_after=5,
-            )
+            msg = f"🚫 You need the `{missing}` permission(s) to use this command."
         else:
-            await interaction.response.send_message(
-                "❌ An error occurred while running the command.", ephemeral=True
-            )
+            msg = "❌ An error occurred while running the command."
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    msg, ephemeral=True, delete_after=5
+                )
+        except Exception:
+            pass
+
+        # Re-raise AFTER sending, so the user always sees the message
+        if not isinstance(error, app_commands.MissingPermissions):
             raise error
 
     def dj_role_required(interaction: discord.Interaction) -> bool:
@@ -74,20 +114,12 @@ class MusicCommands(commands.Cog):
     @app_commands.command(name="play", description="Play a song with the given query.")
     @app_commands.check(dj_role_required)
     async def play(self, interaction: discord.Interaction, query: str):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_play_action(
-            interaction, interaction.guild, interaction.user, player, query
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_play_action, query)
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue.")
     @app_commands.check(dj_role_required)
     async def stop(self, interaction: discord.Interaction):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_stop_action(
-            interaction, interaction.guild, interaction.user, player
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_stop_action)
 
     @app_commands.command(name="skip", description="Skip the current song.")
     @app_commands.check(dj_role_required)
@@ -97,42 +129,26 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         count: Optional[app_commands.Range[int, 1, None]] = 1,
     ):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_skip_action(
-            interaction, interaction.guild, interaction.user, player, count
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_skip_action, count)
 
     @app_commands.command(
         name="toggle", description="Toggle pause/resume of the current song."
     )
     @app_commands.check(dj_role_required)
     async def pause_resume(self, interaction: discord.Interaction):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_toggle_action(
-            interaction, interaction.guild, interaction.user, player
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_toggle_action)
 
-    @app_commands.command(name="disconnect", description="Disconnect the player.")
+    @app_commands.command(name="disconnect", description="Disconnect the player. Bot leaves voice channel.")
     @app_commands.check(dj_role_required)
     async def disconnect(self, interaction: discord.Interaction):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_disconnect_action(
-            interaction, interaction.guild, interaction.user, player
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_disconnect_action)
 
     @app_commands.command(
         name="shuffle", description="Shuffle the current queue of songs."
     )
     @app_commands.check(dj_role_required)
     async def shuffle(self, interaction: discord.Interaction):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_shuffle_action(
-            interaction, interaction.guild, interaction.user, player
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_shuffle_action)
 
     @app_commands.command(name="queue", description="Display the current queue.")
     @app_commands.check(dj_role_required)
@@ -142,17 +158,22 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         page_size: app_commands.Range[int, 10, 25] = 20,
     ):
+        await interaction.response.defer(ephemeral=True)
         player = self.bot.get_player(interaction.guild.id)
         result = await self.bot.handle_queue_action(
             interaction, interaction.guild, interaction.user, player, page_size
         )
         if isinstance(result, Error):
-            await interaction.response.send_message(result, ephemeral=True)
+            await interaction.followup.send(str(result), ephemeral=True)
             return
         embed, view = result
-        await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=True, delete_after=120
-        )
+        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        asyncio.ensure_future(_delete_after(msg, 120))
+
+    @app_commands.command(name="status", description="Show the current bot status.")
+    async def status(self, interaction: discord.Interaction):
+        embed = self.bot.build_status_embed(interaction.guild)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(
         name="forward", description="Forward song by a given number of seconds"
@@ -164,11 +185,11 @@ class MusicCommands(commands.Cog):
         interaction: discord.Interaction,
         seconds: app_commands.Range[int, 1, None],
     ):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_forward_action(
-            interaction, interaction.guild, interaction.user, player, seconds
+        await self._run_player_action(
+            interaction,
+            self.bot.handle_forward_action,
+            seconds,
         )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(
         name="nightcore",
@@ -185,11 +206,11 @@ class MusicCommands(commands.Cog):
     async def nightcore(
         self, interaction: discord.Interaction, mode: app_commands.Choice[int]
     ):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_nightcore_action(
-            interaction, interaction.guild, interaction.user, player, mode.value
+        await self._run_player_action(
+            interaction,
+            self.bot.handle_nightcore_action,
+            mode.value,
         )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
 
     @app_commands.command(
         name="create_dj",
@@ -214,11 +235,7 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.check(dj_role_required)
     async def enable_247(self, interaction: discord.Interaction):
-        player = self.bot.get_player(interaction.guild.id)
-        msg = await self.bot.handle_stay_247_action(
-            interaction, interaction.guild, interaction.user, player
-        )
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
+        await self._run_player_action(interaction, self.bot.handle_stay_247_action)
 
     @app_commands.command(
         name="help",
@@ -226,7 +243,7 @@ class MusicCommands(commands.Cog):
     )
     async def help_command(self, interaction: discord.Interaction):
         help_message = """
-**Music Bot Setup Help:**
+**Molten Music Bot Setup Help:**
 
 To set up a music request channel in your server, use the `/setup` command. This will create a dedicated channel where users can send song requests.
         
@@ -243,6 +260,7 @@ Once the channel is created, you can:
 - Use the `/disconnect` command to disconnect the player and stop playback.
 - Use the `/forward <seconds>` command to skip forward by a given number of seconds.
 - Use the `/queue` command to display the current queue of songs.
+- Use the `/status` command to show Lavalink, queue, and uptime status.
 
 The bot will automatically manage the player and display the current song status in the setup channel.
 

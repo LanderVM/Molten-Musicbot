@@ -34,6 +34,12 @@ git clone https://github.com/LanderVM/Molten-Musicbot.git
 cd Molten-Musicbot
 ```
 
+If on Linux also run (Not needed for Windows users):
+
+```bash
+sudo chown -R 1000:1000 lavalink/plugins
+```
+
 ### 2. Set Up Environment Variables
 
 Copy the `.env.example` file and rename it to `.env`.
@@ -65,10 +71,18 @@ Replace `your_discord_bot_token_here` with the bot token you obtained in step 3.
 ### 5. Run the Bot with Docker
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 The bot and Lavalink will start automatically.
+
+If you ever need to update the bot, run the above steps 1-4 again and use this command to update:
+
+```bash
+docker compose down
+docker compose build --no-cache
+docker compose up -d --force-recreate --pull always
+```
 
 ---
 
@@ -135,7 +149,7 @@ In your Discord server, you can use the following commands to control the bot:
 
 ### Troubleshooting
 
-- If the bot can’t play songs from certain sources anymore, but could play them before, try repulling the Docker image with `docker-compose pull` and then restart the bot using `docker-compose up -d`.
+- If the bot can’t play songs from certain sources anymore, but could play them before, turn off the bot with `docker compose down` and then restart it using `docker compose up -d`.
 - Make sure you are connected to a voice channel before trying to play music.
 - Ensure your Lavalink V4 server is running and accessible.
 - If you get errors related to missing dependencies, make sure you have all packages installed from `requirements.txt`.

@@ -9,11 +9,6 @@ class SetupChannelKeys(StrEnum):
     DJ_ROLE_NAME = "Molten_DJ"
 
 
-class LatestActionKeys(StrEnum):
-    TEXT = "text"
-    PERSIST = "persist"
-
-
 class EnvironmentKeys(StrEnum):
     DISCORD_TOKEN = "DISCORD_BOT_TOKEN"
     LAVALINK_HOST = "LAVALINK_HOST"

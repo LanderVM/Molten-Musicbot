@@ -3,9 +3,43 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import Protocol
+from urllib.parse import urlparse
 
 SETUP_CHANNELS_FILE = "data/setup_channels.json"
 os.makedirs(os.path.dirname(SETUP_CHANNELS_FILE), exist_ok=True)
+
+_save_lock = asyncio.Lock()  # Prevents concurrent JSON writes from corrupting file
+
+
+class TrackWithTitleAndUri(Protocol):
+    title: str | None
+    uri: str | None
+
+
+def get_track_display_title(track: TrackWithTitleAndUri) -> str:
+    title = getattr(track, "title", None)
+    if title and title.strip().lower() != "unknown title":
+        return title
+
+    uri = getattr(track, "uri", None)
+    if not uri:
+        return title or "Unknown title"
+
+    try:
+        parsed = urlparse(uri if "://" in uri else f"https://{uri}")
+
+        host = parsed.hostname or ""
+        host = host.lower()
+
+        if host.startswith("www."):
+            host = host[4:]
+
+        return host or (title or "Unknown title")
+
+    except Exception:
+        return title or "Unknown title"
 
 
 def load_setup_channels() -> dict:
@@ -21,7 +55,7 @@ def load_setup_channels() -> dict:
                 data = json.load(f)
             return {int(guild_id): info for guild_id, info in data.items()}
         except Exception as e:
-            logging.error(f"Failed to load setup channels: {e}")
+            logging.error("Failed to load setup channels: %s", e)
             return {}
     else:
         return {}
@@ -39,7 +73,8 @@ def save_setup_channels_sync(data: dict) -> None:
 
 
 async def save_setup_channels_async(data: dict) -> None:
-    await asyncio.to_thread(save_setup_channels_sync, data)
+    async with _save_lock:
+        await asyncio.to_thread(save_setup_channels_sync, data)
 
 
 def remove_setup_channel(guild_id: int, data: dict) -> None:
@@ -74,6 +109,29 @@ def format_duration(ms: int) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
+def format_duration_mm_ss(ms: int) -> str:
+    """Formats milliseconds as MM:SS for compact queue display."""
+    seconds = ms // 1000
+    minutes, seconds = divmod(seconds, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def format_uptime(uptime: timedelta) -> str:
+    """Formats timedelta as a compact uptime string (e.g. 2d 3h 4m 5s)."""
+    days = uptime.days
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    if minutes or hours or days:
+        parts.append(f"{minutes}m")
+    parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
 @dataclass
 class Error:
     """Represents an error result."""
@@ -92,3 +150,9 @@ class Success:
 
     def __str__(self):
         return self.message
+
+
+@dataclass
+class LatestAction:
+    text: str
+    persist: bool = False

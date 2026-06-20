@@ -19,7 +19,7 @@ def debounce_action(delay: float = 0.5):
                 return Error("Too many button presses at once—please wait a moment.")
             await lock.acquire()
 
-            logging.debug(f"[{guild.id}] lock acquired by {user.display_name}")
+            logging.debug("[%s] lock acquired by %s", guild.id, user.display_name)
             asyncio.create_task(self._release_lock_after(lock, delay))
             return await fn(self, interaction, guild, user, *args, **kwargs)
 
