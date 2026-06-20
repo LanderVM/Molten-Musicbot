@@ -15,6 +15,10 @@ import lavalink
 from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView, QueueView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, SetupChannelKeys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dashboard import Dashboard
 from lavalink import LoadType
 from lavalink.filters import Timescale
 from lavalink_voice import LavalinkVoiceClient
@@ -62,6 +66,7 @@ class Bot(commands.Bot):
         self.lavalink: lavalink.Client | None = None
         self.lavalink_ready = False
         self.lavalink_last_ready_at: datetime | None = None
+        self.dashboard: Dashboard | None = None
 
     def set_latest_action(
         self, guild_id: int, action: str, persist: bool = False
@@ -137,6 +142,31 @@ class Bot(commands.Bot):
 
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
+
+        # ── Dashboard (optional) ──────────────────────────────────────────────
+        if os.getenv(EnvironmentKeys.DASHBOARD_ENABLED, "false").lower() == "true":
+            _bad_secrets = {"", "change_me_please", "your_secret_here"}
+            dashboard_secret = os.getenv(EnvironmentKeys.DASHBOARD_SECRET, "")
+            if dashboard_secret in _bad_secrets:
+                logging.warning(
+                    "⚠️  Dashboard is enabled but DASHBOARD_SECRET is not set. "
+                    "Dashboard will not start."
+                )
+            else:
+                from dashboard import Dashboard  # noqa: PLC0415
+                dashboard_host = os.getenv(EnvironmentKeys.DASHBOARD_HOST, "0.0.0.0")
+                try:
+                    dashboard_port = int(
+                        os.getenv(EnvironmentKeys.DASHBOARD_PORT, "8080")
+                    )
+                except ValueError:
+                    logging.warning("Invalid DASHBOARD_PORT — defaulting to 8080.")
+                    dashboard_port = 8080
+                self.dashboard = Dashboard(
+                    self, dashboard_secret, dashboard_host, dashboard_port
+                )
+                await self.dashboard.start()
+        # ─────────────────────────────────────────────────────────────────────
         try:
             synced = await self.tree.sync()
             logging.info("Synced %d application command(s)", len(synced))
@@ -1012,7 +1042,9 @@ class Bot(commands.Bot):
             logging.error("Failed to update buttons on setup message: %s", e)
 
     async def close(self) -> None:
-        """Gracefully shut down Lavalink and the bot."""
+        """Gracefully shut down Lavalink, dashboard, and the bot."""
+        if self.dashboard:
+            await self.dashboard.stop()
         if self.lavalink:
             try:
                 await self.lavalink.close()

@@ -48,6 +48,11 @@ class EventHandlers(commands.Cog):
         await self.bot.change_presence(status=discord.Status.online, activity=activity)
         logging.info("Bot is online & can be used ♫")
 
+        # Backfill joined_at for all current guilds (no-op if already recorded)
+        if self.bot.dashboard:
+            for guild in self.bot.guilds:
+                self.bot.dashboard.record_guild_join(guild.id)
+
     @lavalink.listener(NodeReadyEvent)
     async def on_lavalink_node_ready(self, event: NodeReadyEvent):
         self.bot.lavalink_ready = True
@@ -59,6 +64,12 @@ class EventHandlers(commands.Cog):
             event.resumed,
         )
 
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        """Record when the bot is added to a new server."""
+        if self.bot.dashboard:
+            self.bot.dashboard.record_guild_join(guild.id)
+
     @lavalink.listener(TrackStartEvent)
     async def on_lavalink_track_start(self, event: TrackStartEvent):
         player = event.player
@@ -67,6 +78,13 @@ class EventHandlers(commands.Cog):
             return
 
         self.bot.clear_latest_action(guild.id, only_non_persistent=True)
+
+        # Record stats for dashboard
+        if self.bot.dashboard:
+            track_title = (
+                getattr(event.track, "title", None) or "Unknown"
+            )
+            self.bot.dashboard.record_track_start(guild.id, track_title)
 
         embed = self.bot.create_now_playing_embed(event.track, guild)
         await self.bot.update_setup_embed(
@@ -86,6 +104,10 @@ class EventHandlers(commands.Cog):
         guild = self.bot.get_guild(player.guild_id)
         if not guild:
             return
+
+        # Finalise playtime for the last track
+        if self.bot.dashboard:
+            self.bot.dashboard.record_track_end(guild.id)
 
         setup_data = self.bot.setup_channels.get(guild.id, {})
         if not setup_data:
