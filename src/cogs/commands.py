@@ -138,7 +138,7 @@ class MusicCommands(commands.Cog):
     async def pause_resume(self, interaction: discord.Interaction):
         await self._run_player_action(interaction, self.bot.handle_toggle_action)
 
-    @app_commands.command(name="disconnect", description="Disconnect the player.")
+    @app_commands.command(name="disconnect", description="Disconnect the player. Bot leaves voice channel.")
     @app_commands.check(dj_role_required)
     async def disconnect(self, interaction: discord.Interaction):
         await self._run_player_action(interaction, self.bot.handle_disconnect_action)
