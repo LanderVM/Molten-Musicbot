@@ -1,0 +1,16 @@
+# docker compose -f docker-compose-public-lavalink.yml up -d
+services:
+  molten-musicbot:
+    build: .
+    image: molten-musicbot:latest
+    container_name: molten-musicbot
+    environment:
+      #LAVALINK_HOST: lavalink
+      #LAVALINK_PORT: 2333
+      #LAVALINK_PASSWORD: youshallnotpass
+      #SSL_ENABLED: "false"
+      LOG_LEVEL: "DEBUG" # INFO or DEBUG
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    command: sh -c "python src/main.py"
