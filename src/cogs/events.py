@@ -81,9 +81,7 @@ class EventHandlers(commands.Cog):
 
         # Record stats for dashboard
         if self.bot.dashboard:
-            track_title = (
-                getattr(event.track, "title", None) or "Unknown"
-            )
+            track_title = getattr(event.track, "title", None) or "Unknown"
             self.bot.dashboard.record_track_start(guild.id, track_title)
 
         embed = self.bot.create_now_playing_embed(event.track, guild)

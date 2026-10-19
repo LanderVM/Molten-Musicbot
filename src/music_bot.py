@@ -5,7 +5,7 @@ import random
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord.ext import commands
@@ -15,10 +15,10 @@ import lavalink
 from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView, QueueView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, SetupChannelKeys
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dashboard import Dashboard
+
 from lavalink import LoadType
 from lavalink.filters import Timescale
 from lavalink_voice import LavalinkVoiceClient
@@ -154,6 +154,7 @@ class Bot(commands.Bot):
                 )
             else:
                 from dashboard import Dashboard  # noqa: PLC0415
+
                 dashboard_host = os.getenv(EnvironmentKeys.DASHBOARD_HOST, "0.0.0.0")
                 try:
                     dashboard_port = int(
@@ -353,6 +354,9 @@ class Bot(commands.Bot):
     def build_status_embed(self, guild: discord.Guild | None) -> discord.Embed:
         player = self.get_player(guild.id) if guild else None
         lavalink_ok = self.is_lavalink_connected()
+        dashboard_enabled = (
+            os.getenv(EnvironmentKeys.DASHBOARD_ENABLED, "false").lower() == "true"
+        )
         in_voice = bool(guild and guild.voice_client)
         queue_length = len(player.queue) if player else 0
         uptime = datetime.now(timezone.utc) - self.start_time
@@ -385,6 +389,11 @@ class Bot(commands.Bot):
         embed.add_field(
             name="Lavalink",
             value="🟢 Connected" if lavalink_ok else "🔴 Disconnected",
+            inline=True,
+        )
+        embed.add_field(
+            name="Dashboard",
+            value="On" if dashboard_enabled else "Off",
             inline=True,
         )
         embed.add_field(
@@ -533,7 +542,7 @@ class Bot(commands.Bot):
             dj_role = message.guild.get_role(dj_role_id)
             if dj_role and dj_role not in message.author.roles:
                 return Error("🚫 You need the DJ role to request songs.")
-        
+
         return await self.handle_play_action(
             message,
             message.guild,
@@ -634,7 +643,7 @@ class Bot(commands.Bot):
                     self,
                     player,
                     disabled_buttons=IDLE_DISABLED_BUTTONS,
-                    paused_override=False
+                    paused_override=False,
                 ),
             )
 
@@ -732,7 +741,7 @@ class Bot(commands.Bot):
                 self,
                 active_player,
                 disabled_buttons=IDLE_DISABLED_BUTTONS,
-                paused_override=False
+                paused_override=False,
             ),
         )
 
@@ -785,7 +794,7 @@ class Bot(commands.Bot):
     ) -> str:
         if not player or not player.is_playing or not player.current:
             return Error("No track is currently playing.")
-        
+
         if getattr(player.current, "stream", False):
             return Error("Cannot forward in a live stream.")
 
@@ -883,7 +892,7 @@ class Bot(commands.Bot):
                         self,
                         player,
                         disabled_buttons=IDLE_DISABLED_BUTTONS,
-                        paused_override=False
+                        paused_override=False,
                     ),
                 )
             await vc.disconnect()
