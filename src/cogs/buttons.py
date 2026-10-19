@@ -86,7 +86,9 @@ class PlayerControlView(View):
 
     @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
     async def stop_button(self, interaction: Interaction, button: Button):
-        player = self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        player = (
+            self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        )
         await self._handle_control_action(
             interaction,
             self.bot.handle_stop_action(
@@ -96,7 +98,9 @@ class PlayerControlView(View):
 
     @button(emoji="⏸️", custom_id=ControlButton.PAUSE_RESUME.value)
     async def pause_button(self, interaction: Interaction, button: Button):
-        player = self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        player = (
+            self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        )
         await self._handle_control_action(
             interaction,
             self.bot.handle_toggle_action(
@@ -106,7 +110,9 @@ class PlayerControlView(View):
 
     @button(emoji="⏭️", custom_id=ControlButton.SKIP.value)
     async def skip_button(self, interaction: Interaction, button: Button):
-        player = self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        player = (
+            self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        )
         await self._handle_control_action(
             interaction,
             self.bot.handle_skip_action(
@@ -116,7 +122,9 @@ class PlayerControlView(View):
 
     @button(emoji="🔀", custom_id=ControlButton.SHUFFLE.value)
     async def shuffle_button(self, interaction: Interaction, button: Button):
-        player = self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        player = (
+            self.bot.get_player(interaction.guild.id) if interaction.guild else None
+        )
         await self._handle_control_action(
             interaction,
             self.bot.handle_shuffle_action(

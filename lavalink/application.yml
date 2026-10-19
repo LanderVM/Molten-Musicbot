@@ -215,8 +215,8 @@ lavalink:
       snapshot: false
     - dependency: "com.github.topi314.sponsorblock:sponsorblock-plugin:3.0.1"
       snapshot: false
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
-      snapshot: false
+    - dependency: "dev.lavalink.youtube:youtube-plugin:2be8e542d3f6f178e048dca565892684c2e40177" # Latest version often required for YouTube to work properly (and for ejs-api to work properly)
+      snapshot: true
   pluginsDir: "./plugins"
   server:
     password: "youshallnotpass"

@@ -61,12 +61,16 @@ services:
     build: .
     image: molten-musicbot:latest
     container_name: molten-musicbot
+    env_file:
+      - .env
     environment:
       LAVALINK_HOST: gluetun-lavalink
       LAVALINK_PORT: 2333
       LAVALINK_PASSWORD: youshallnotpass
       SSL_ENABLED: "false"
       LOG_LEVEL: "INFO" # INFO or DEBUG
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
     restart: unless-stopped
     volumes:
       - ./data:/app/data

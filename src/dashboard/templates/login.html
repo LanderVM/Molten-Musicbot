@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Molten Musicbot · Login</title>
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">🔥</span>
+    <div class="brand-text">
+      <h1>Molten Musicbot</h1>
+      <span>Dashboard</span>
+    </div>
+  </div>
+</header>
+<main>
+  <section class="login" aria-labelledby="login-title">
+    <p class="section-label">Dashboard access</p>
+    <div class="card">
+      <div class="card-head">
+        <h2 id="login-title">Sign in</h2>
+        <p>Enter your password to access the dashboard.</p>
+      </div>
+      <form method="POST" action="/login">
+        <input type="hidden" name="csrf" value="{{LOGIN_CSRF}}">
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password"
+               placeholder="Enter password" required autofocus
+               autocomplete="current-password">
+        <button type="submit">Sign in</button>
+      </form>
+      {{ERROR}}
+    </div>
+  </section>
+</main>
+</body>
+</html>

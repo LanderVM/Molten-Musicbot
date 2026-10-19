@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Molten Musicbot · Dashboard</title>
+  <meta name="csrf-token" content="{{CSRF}}">
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<div id="notif"></div>
+
+<header>
+  <div class="brand">
+    <span class="brand-icon">🔥</span>
+    <div class="brand-text">
+      <h1>Molten Musicbot</h1>
+      <span>Dashboard</span>
+    </div>
+  </div>
+
+  <div class="h-pills">
+    <div class="pill">⏱️ Uptime: <b id="h-uptime">…</b></div>
+    <div class="pill">
+      <span id="h-ll-dot" class="dot"></span>
+      Lavalink: <b id="h-ll-lbl">…</b>
+    </div>
+    <div class="pill" id="h-ll-addr-pill" style="display:none">
+      🔗 <b id="h-ll-addr">…</b>
+    </div>
+    <div class="pill">🏠 Servers: <b id="h-guilds">…</b></div>
+  </div>
+
+  <div class="h-right">
+    <span id="h-refresh">–</span>
+    <form action="/logout" method="POST"><input type="hidden" name="csrf" value="{{CSRF}}"><button type="submit" class="btn-logout">Logout</button></form>
+  </div>
+</header>
+
+<main>
+  <p class="sec-title" id="sec-lbl">Servers</p>
+  <div class="grid" id="grid">
+    <div class="loading"><div class="spinner"></div><p>Connecting…</p></div>
+  </div>
+</main>
+
+<script src="/static/dashboard.js" defer></script>
+</body>
+</html>

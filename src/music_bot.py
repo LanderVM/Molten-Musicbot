@@ -5,7 +5,7 @@ import random
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord.ext import commands
@@ -15,6 +15,10 @@ import lavalink
 from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView, QueueView
 from decorators import debounce_action, ensure_voice
 from enums import EnvironmentKeys, SetupChannelKeys
+
+if TYPE_CHECKING:
+    from dashboard import Dashboard
+
 from lavalink import LoadType
 from lavalink.filters import Timescale
 from lavalink_voice import LavalinkVoiceClient
@@ -62,6 +66,7 @@ class Bot(commands.Bot):
         self.lavalink: lavalink.Client | None = None
         self.lavalink_ready = False
         self.lavalink_last_ready_at: datetime | None = None
+        self.dashboard: Dashboard | None = None
 
     def set_latest_action(
         self, guild_id: int, action: str, persist: bool = False
@@ -137,6 +142,32 @@ class Bot(commands.Bot):
 
         await self.load_extension("cogs.commands")
         await self.load_extension("cogs.events")
+
+        # ── Dashboard (optional) ──────────────────────────────────────────────
+        if os.getenv(EnvironmentKeys.DASHBOARD_ENABLED, "false").lower() == "true":
+            _bad_secrets = {"", "change_me_please", "your_secret_here"}
+            dashboard_secret = os.getenv(EnvironmentKeys.DASHBOARD_SECRET, "")
+            if dashboard_secret in _bad_secrets:
+                logging.warning(
+                    "⚠️  Dashboard is enabled but DASHBOARD_SECRET is not set. "
+                    "Dashboard will not start."
+                )
+            else:
+                from dashboard import Dashboard  # noqa: PLC0415
+
+                dashboard_host = os.getenv(EnvironmentKeys.DASHBOARD_HOST, "0.0.0.0")
+                try:
+                    dashboard_port = int(
+                        os.getenv(EnvironmentKeys.DASHBOARD_PORT, "8080")
+                    )
+                except ValueError:
+                    logging.warning("Invalid DASHBOARD_PORT — defaulting to 8080.")
+                    dashboard_port = 8080
+                self.dashboard = Dashboard(
+                    self, dashboard_secret, dashboard_host, dashboard_port
+                )
+                await self.dashboard.start()
+        # ─────────────────────────────────────────────────────────────────────
         try:
             synced = await self.tree.sync()
             logging.info("Synced %d application command(s)", len(synced))
@@ -323,6 +354,9 @@ class Bot(commands.Bot):
     def build_status_embed(self, guild: discord.Guild | None) -> discord.Embed:
         player = self.get_player(guild.id) if guild else None
         lavalink_ok = self.is_lavalink_connected()
+        dashboard_enabled = (
+            os.getenv(EnvironmentKeys.DASHBOARD_ENABLED, "false").lower() == "true"
+        )
         in_voice = bool(guild and guild.voice_client)
         queue_length = len(player.queue) if player else 0
         uptime = datetime.now(timezone.utc) - self.start_time
@@ -355,6 +389,11 @@ class Bot(commands.Bot):
         embed.add_field(
             name="Lavalink",
             value="🟢 Connected" if lavalink_ok else "🔴 Disconnected",
+            inline=True,
+        )
+        embed.add_field(
+            name="Dashboard",
+            value="On" if dashboard_enabled else "Off",
             inline=True,
         )
         embed.add_field(
@@ -503,7 +542,7 @@ class Bot(commands.Bot):
             dj_role = message.guild.get_role(dj_role_id)
             if dj_role and dj_role not in message.author.roles:
                 return Error("🚫 You need the DJ role to request songs.")
-        
+
         return await self.handle_play_action(
             message,
             message.guild,
@@ -604,7 +643,7 @@ class Bot(commands.Bot):
                     self,
                     player,
                     disabled_buttons=IDLE_DISABLED_BUTTONS,
-                    paused_override=False
+                    paused_override=False,
                 ),
             )
 
@@ -702,7 +741,7 @@ class Bot(commands.Bot):
                 self,
                 active_player,
                 disabled_buttons=IDLE_DISABLED_BUTTONS,
-                paused_override=False
+                paused_override=False,
             ),
         )
 
@@ -755,7 +794,7 @@ class Bot(commands.Bot):
     ) -> str:
         if not player or not player.is_playing or not player.current:
             return Error("No track is currently playing.")
-        
+
         if getattr(player.current, "stream", False):
             return Error("Cannot forward in a live stream.")
 
@@ -853,7 +892,7 @@ class Bot(commands.Bot):
                         self,
                         player,
                         disabled_buttons=IDLE_DISABLED_BUTTONS,
-                        paused_override=False
+                        paused_override=False,
                     ),
                 )
             await vc.disconnect()
@@ -1012,7 +1051,9 @@ class Bot(commands.Bot):
             logging.error("Failed to update buttons on setup message: %s", e)
 
     async def close(self) -> None:
-        """Gracefully shut down Lavalink and the bot."""
+        """Gracefully shut down Lavalink, dashboard, and the bot."""
+        if self.dashboard:
+            await self.dashboard.stop()
         if self.lavalink:
             try:
                 await self.lavalink.close()

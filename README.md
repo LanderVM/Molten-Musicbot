@@ -75,6 +75,13 @@ docker compose up -d
 ```
 
 The bot and Lavalink will start automatically.
+When `DASHBOARD_ENABLED=true` is set in `.env`, open
+[http://localhost:8080/](http://localhost:8080/) to access the dashboard and
+sign in with `DASHBOARD_SECRET`.
+The Compose files publish the configured dashboard port only on the local
+machine (`127.0.0.1`), so it is not directly reachable from the internet.
+The port mapping remains present when the dashboard is disabled, but no
+dashboard process listens on it.
 
 If you ever need to update the bot, run the above steps 1-4 again and use this command to update:
 

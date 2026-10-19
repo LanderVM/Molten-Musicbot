@@ -54,7 +54,6 @@ class MusicCommands(commands.Cog):
         message = await interaction.followup.send(str(msg), ephemeral=True)
         asyncio.ensure_future(_delete_after(message, 5))
 
-
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):
@@ -138,7 +137,10 @@ class MusicCommands(commands.Cog):
     async def pause_resume(self, interaction: discord.Interaction):
         await self._run_player_action(interaction, self.bot.handle_toggle_action)
 
-    @app_commands.command(name="disconnect", description="Disconnect the player. Bot leaves voice channel.")
+    @app_commands.command(
+        name="disconnect",
+        description="Disconnect the player. Bot leaves voice channel.",
+    )
     @app_commands.check(dj_role_required)
     async def disconnect(self, interaction: discord.Interaction):
         await self._run_player_action(interaction, self.bot.handle_disconnect_action)
