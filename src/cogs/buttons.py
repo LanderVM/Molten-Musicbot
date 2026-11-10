@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Awaitable, List, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, List, Optional
 
 import discord
 from discord import Interaction
@@ -76,13 +76,12 @@ class PlayerControlView(View):
                 child.disabled = True
 
     async def _handle_control_action(
-        self, interaction: Interaction, action: Awaitable[object]
+        self, interaction: Interaction, action: Callable[[], Awaitable[object]]
     ) -> None:
-        msg = await action
-        if isinstance(msg, Error):
-            await interaction.response.send_message(msg, ephemeral=True, delete_after=3)
-            return
         await interaction.response.defer()
+        msg = await action()
+        if isinstance(msg, Error):
+            await interaction.followup.send(str(msg), ephemeral=True)
 
     @button(emoji="⏹️", custom_id=ControlButton.STOP.value)
     async def stop_button(self, interaction: Interaction, button: Button):
@@ -91,7 +90,7 @@ class PlayerControlView(View):
         )
         await self._handle_control_action(
             interaction,
-            self.bot.handle_stop_action(
+            lambda: self.bot.handle_stop_action(
                 interaction, interaction.guild, interaction.user, player
             ),
         )
@@ -103,7 +102,7 @@ class PlayerControlView(View):
         )
         await self._handle_control_action(
             interaction,
-            self.bot.handle_toggle_action(
+            lambda: self.bot.handle_toggle_action(
                 interaction, interaction.guild, interaction.user, player
             ),
         )
@@ -115,7 +114,7 @@ class PlayerControlView(View):
         )
         await self._handle_control_action(
             interaction,
-            self.bot.handle_skip_action(
+            lambda: self.bot.handle_skip_action(
                 interaction, interaction.guild, interaction.user, player
             ),
         )
@@ -127,7 +126,7 @@ class PlayerControlView(View):
         )
         await self._handle_control_action(
             interaction,
-            self.bot.handle_shuffle_action(
+            lambda: self.bot.handle_shuffle_action(
                 interaction, interaction.guild, interaction.user, player
             ),
         )

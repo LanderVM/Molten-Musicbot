@@ -9,8 +9,9 @@ services:
       - _JAVA_OPTIONS=-Xmx6G
       # set lavalink server port
       - SERVER_PORT=2333
+      - CIPHER_API_TOKEN=${CIPHER_API_TOKEN:?Set CIPHER_API_TOKEN in .env}
       # set password for lavalink
-      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+      - LAVALINK_SERVER_PASSWORD=${LOCAL_LAVALINK_PASSWORD:?Set LOCAL_LAVALINK_PASSWORD in .env}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml
       - ./lavalink/plugins/:/opt/Lavalink/plugins/
@@ -22,10 +23,8 @@ services:
     #   dockerfile: Dockerfile
     image: ghcr.io/kikkia/yt-cipher:master
     container_name: ejs_signature_api
-    ports:
-      - "8001:8001"
     environment:
-      - API_TOKEN=your_secret_password
+      - API_TOKEN=${CIPHER_API_TOKEN:?Set CIPHER_API_TOKEN in .env}
     restart: unless-stopped
 
   molten-musicbot:
@@ -37,12 +36,13 @@ services:
     environment:
       LAVALINK_HOST: lavalink
       LAVALINK_PORT: 2333
-      LAVALINK_PASSWORD: youshallnotpass
+      LAVALINK_PASSWORD: ${LOCAL_LAVALINK_PASSWORD:?Set LOCAL_LAVALINK_PASSWORD in .env}
       SSL_ENABLED: "false"
+      DASHBOARD_HOST: "0.0.0.0"
       LOG_LEVEL: "INFO" # INFO or DEBUG
     ports:
       - "127.0.0.1:${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
     restart: unless-stopped
     volumes:
       - ./data:/app/data
-    command: sh -c "python src/wait_for_lavalink.py && python src/main.py"
+    command: sh -c "python src/wait_for_lavalink.py && exec python src/main.py"

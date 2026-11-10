@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from enums import SetupChannelKeys
-from utils import Error
+from utils import Error, dj_permission_error
 
 if TYPE_CHECKING:
     from music_bot import Bot
@@ -83,17 +83,9 @@ class MusicCommands(commands.Cog):
         Uses the DJ role stored in the setup_channels via its ID.
         If no DJ role is stored for the guild, the command is allowed.
         """
-        guild = interaction.guild
-        if guild is None:
-            return True
-
-        bot: Bot = interaction.client
-        setup_data = bot.setup_channels.get(guild.id)
-        dj_role = None
-        if setup_data and SetupChannelKeys.DJ_ROLE in setup_data:
-            dj_role = guild.get_role(setup_data[SetupChannelKeys.DJ_ROLE])
-
-        if dj_role is None or dj_role in interaction.user.roles:
+        if not dj_permission_error(
+            interaction.guild, interaction.user, interaction.client.setup_channels
+        ):
             return True
 
         raise app_commands.MissingPermissions([SetupChannelKeys.DJ_ROLE_NAME])
@@ -104,11 +96,9 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setup_create(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         msg = await self.bot.create_setup_channel(interaction.guild)
-        if isinstance(msg, Error):
-            await interaction.response.send_message(msg, ephemeral=True)
-            return
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+        await interaction.followup.send(str(msg), ephemeral=True)
 
     @app_commands.command(name="play", description="Play a song with the given query.")
     @app_commands.check(dj_role_required)
@@ -220,8 +210,9 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.checks.has_permissions(manage_roles=True)
     async def create_dj(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         msg = await self.bot.create_dj_role(interaction.guild)
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+        await interaction.followup.send(str(msg), ephemeral=True)
 
     @app_commands.command(
         name="remove_dj",
@@ -229,8 +220,9 @@ class MusicCommands(commands.Cog):
     )
     @app_commands.checks.has_permissions(manage_roles=True)
     async def remove_dj(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         msg = await self.bot.remove_dj_role(interaction.guild)
-        await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
+        await interaction.followup.send(str(msg), ephemeral=True)
 
     @app_commands.command(
         name="247", description="Toggle 24/7 mode for the music channel."

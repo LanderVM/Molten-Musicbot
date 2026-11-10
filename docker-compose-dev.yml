@@ -4,14 +4,15 @@ services:
     container_name: lavalink
     restart: unless-stopped
     ports:
-      - "2333:2333"
+      - "127.0.0.1:2333:2333"
     environment:
       # set Java options here (6GB heap size)
       - _JAVA_OPTIONS=-Xmx6G
       # set lavalink server port
       - SERVER_PORT=2333
+      - CIPHER_API_TOKEN=${CIPHER_API_TOKEN:?Set CIPHER_API_TOKEN in .env}
       # set password for lavalink
-      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+      - LAVALINK_SERVER_PASSWORD=${LOCAL_LAVALINK_PASSWORD:?Set LOCAL_LAVALINK_PASSWORD in .env}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml
       - ./lavalink/plugins/:/opt/Lavalink/plugins/
@@ -23,8 +24,6 @@ services:
     #   dockerfile: Dockerfile
     image: ghcr.io/kikkia/yt-cipher:master
     container_name: ejs_signature_api
-    ports:
-      - "8001:8001"
     environment:
-      - API_TOKEN=your_secret_password
+      - API_TOKEN=${CIPHER_API_TOKEN:?Set CIPHER_API_TOKEN in .env}
     restart: unless-stopped

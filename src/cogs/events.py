@@ -13,9 +13,12 @@ from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView
 from enums import SetupChannelKeys
 from lavalink.events import (
     NodeReadyEvent,
+    NodeDisconnectedEvent,
     PlayerErrorEvent,
     QueueEndEvent,
     TrackStartEvent,
+    TrackEndEvent,
+    TrackExceptionEvent,
     TrackStuckEvent,
 )
 from utils import Error, save_setup_channels_async
@@ -57,6 +60,12 @@ class EventHandlers(commands.Cog):
     async def on_lavalink_node_ready(self, event: NodeReadyEvent):
         self.bot.lavalink_ready = True
         self.bot.lavalink_last_ready_at = datetime.now(timezone.utc)
+        if self.bot.dashboard and event.resumed:
+            for player in self.bot.lavalink.player_manager.values():
+                if player.node == event.node and player.current:
+                    self.bot.dashboard.record_track_resume(
+                        player.guild_id, player.paused
+                    )
         logging.info(
             "Lavalink node ready: %s | Session: %s | Resumed: %s",
             event.node,
@@ -69,6 +78,34 @@ class EventHandlers(commands.Cog):
         """Record when the bot is added to a new server."""
         if self.bot.dashboard:
             self.bot.dashboard.record_guild_join(guild.id)
+
+    @lavalink.listener(NodeDisconnectedEvent)
+    async def on_lavalink_node_disconnected(self, event: NodeDisconnectedEvent):
+        self.bot.lavalink_ready = False
+        if self.bot.dashboard:
+            for player in self.bot.lavalink.player_manager.values():
+                if player.node == event.node:
+                    self.bot.dashboard.record_track_end(player.guild_id)
+            self.bot.dashboard.notify_change()
+
+    @lavalink.listener(TrackEndEvent)
+    async def on_lavalink_track_end(self, event: TrackEndEvent):
+        if self.bot.dashboard:
+            self.bot.dashboard.record_track_end(event.player.guild_id)
+
+    @lavalink.listener(TrackExceptionEvent)
+    async def on_lavalink_track_exception(self, event: TrackExceptionEvent):
+        logging.warning(
+            "Track exception on guild %s: %s; severity=%s; cause=%s",
+            event.player.guild_id,
+            event.message,
+            event.severity,
+            event.cause,
+        )
+        self.bot.set_latest_action(
+            event.player.guild_id, "Track failed to load", persist=True
+        )
+        # DefaultPlayer handles the following loadFailed TrackEndEvent.
 
     @lavalink.listener(TrackStartEvent)
     async def on_lavalink_track_start(self, event: TrackStartEvent):
@@ -161,16 +198,15 @@ class EventHandlers(commands.Cog):
     @lavalink.listener(PlayerErrorEvent)
     async def on_lavalink_player_error(self, event: PlayerErrorEvent):
         logging.warning(
-            "Track exception on guild %s: %r",
+            "Player error on guild %s: %r",
             event.player.guild_id,
-            event,
+            event.original,
         )
         self.bot.set_latest_action(
             event.player.guild_id,
-            "Skipped — track failed to load",
+            "Playback request failed — see Lavalink logs",
             persist=True,
         )
-        await event.player.skip()
 
     @lavalink.listener(TrackStuckEvent)
     async def on_lavalink_track_stuck(self, event: TrackStuckEvent):
@@ -184,7 +220,7 @@ class EventHandlers(commands.Cog):
             "Skipped — track got stuck",
             persist=True,
         )
-        await event.player.skip()
+        # DefaultPlayer already advances the queue for TrackStuckEvent.
 
 
 async def setup(bot: commands.Bot):

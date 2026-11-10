@@ -42,7 +42,10 @@ sudo chown -R 1000:1000 lavalink/plugins
 
 ### 2. Set Up Environment Variables
 
-Copy the `.env.example` file and rename it to `.env`.
+Copy `.env.example` to `.env`. For the bundled Lavalink deployment, fill
+`LOCAL_LAVALINK_PASSWORD` and `CIPHER_API_TOKEN` with two different random secrets
+(at least 32 characters each). The services refuse to start with missing values.
+The public-node-only Compose file does not require these local service secrets.
 
 ### 3. Find Your Discord Bot Token
 
