@@ -1,39 +1,45 @@
-import asyncio
-import logging
+import time
 from functools import wraps
 
-from utils import Error
+from utils import Error, dj_permission_error
 
 
 def debounce_action(delay: float = 0.5):
-    """
-    Decorator to ensure that only one action per guild can run
-    within `delay` seconds. Subsequent calls return an Error.
-    """
+    """Serialize guild mutations, with a separate minimum request interval."""
 
     def decorator(fn):
         @wraps(fn)
         async def wrapper(self, interaction, guild, user, *args, **kwargs):
+            if guild is None:
+                return Error("This action can only be used in a server.")
             lock = self._action_locks[guild.id]
-            if lock.locked():
+            now = time.monotonic()
+            if lock.locked() or now < self._action_cooldowns.get(guild.id, 0):
                 return Error("Too many button presses at once—please wait a moment.")
-            await lock.acquire()
-
-            logging.debug("[%s] lock acquired by %s", guild.id, user.display_name)
-            asyncio.create_task(self._release_lock_after(lock, delay))
-            return await fn(self, interaction, guild, user, *args, **kwargs)
+            async with lock:
+                self._action_cooldowns[guild.id] = now + delay
+                return await fn(self, interaction, guild, user, *args, **kwargs)
 
         return wrapper
 
     return decorator
 
 
-def ensure_voice(fn):
-    """
-    Decorator to run voice_precheck before the action.
-    If it returns an error string, immediately return Error(err).
-    """
+def require_dj(fn):
+    @wraps(fn)
+    async def wrapper(self, interaction, guild, user, *args, **kwargs):
+        err = dj_permission_error(guild, user, self.setup_channels)
+        if err:
+            return Error(err)
+        return await fn(self, interaction, guild, user, *args, **kwargs)
 
+    return wrapper
+
+
+def ensure_voice(fn):
+    """Authorize and check voice state inside the guild mutation lock."""
+
+    @require_dj
     @wraps(fn)
     async def wrapper(self, interaction, guild, user, *args, **kwargs):
         err = await self.voice_precheck(user, guild)

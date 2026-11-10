@@ -66,6 +66,10 @@ class LavalinkVoiceClient(discord.VoiceProtocol):
 
         self._destroyed = True
 
+        dashboard = getattr(self.client, "dashboard", None)
+        if dashboard:
+            dashboard.record_track_end(self.guild_id)
+
         try:
             await self.lavalink.player_manager.destroy(self.guild_id)
         except ClientError:

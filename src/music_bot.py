@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 import lavalink
 from cogs.buttons import IDLE_DISABLED_BUTTONS, PlayerControlView, QueueView
-from decorators import debounce_action, ensure_voice
+from decorators import debounce_action, ensure_voice, require_dj
 from enums import EnvironmentKeys, SetupChannelKeys
 
 if TYPE_CHECKING:
@@ -26,16 +26,16 @@ from utils import (
     Error,
     LatestAction,
     Success,
+    direct_url_error,
     format_duration,
     format_uptime,
     get_track_display_title,
     load_setup_channels,
-    remove_setup_channel,
     save_setup_channels_async,
 )
 
 load_dotenv()
-URL_RX = re.compile(r"https?://(?:www\.)?.+")
+URL_RX = re.compile(r"https?://(?:www\.)?.+", re.IGNORECASE)
 LAVALINK_NOT_CONNECTED_ERROR = "🚫 Lavalink is not connected."
 
 
@@ -63,6 +63,7 @@ class Bot(commands.Bot):
         self.setup_message_cache: dict[int, discord.Message] = {}
         self.dj_roles: dict[int, discord.Role] = {}
         self._action_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._action_cooldowns: dict[int, float] = {}
         self.lavalink: lavalink.Client | None = None
         self.lavalink_ready = False
         self.lavalink_last_ready_at: datetime | None = None
@@ -155,7 +156,7 @@ class Bot(commands.Bot):
             else:
                 from dashboard import Dashboard  # noqa: PLC0415
 
-                dashboard_host = os.getenv(EnvironmentKeys.DASHBOARD_HOST, "0.0.0.0")
+                dashboard_host = os.getenv(EnvironmentKeys.DASHBOARD_HOST, "127.0.0.1")
                 try:
                     dashboard_port = int(
                         os.getenv(EnvironmentKeys.DASHBOARD_PORT, "8080")
@@ -182,67 +183,55 @@ class Bot(commands.Bot):
         )
 
     def is_lavalink_connected(self) -> bool:
-        return self.lavalink is not None and self.lavalink_ready
+        return self.lavalink is not None and any(
+            node.available for node in self.lavalink.node_manager.nodes
+        )
 
     async def load_setup_message_cache(self) -> None:
-        """
-        Loads and caches the setup messages for each guild from the stored setup_channels.
-        If the setup channel isn't found or an error occurs while fetching the message,
-        the guild's entry is removed from both the in-memory setup_channels and the local file.
-        Also loads the DJ role (if stored) into self.dj_roles.
-        """
-        guild_count = len(self.setup_channels)
-        delay = 0.02 if guild_count > 50 else 0
-
+        """Restore callbacks and cache messages without discarding access policy."""
         for guild_id, data in list(self.setup_channels.items()):
-            channel_id = data.get(SetupChannelKeys.CHANNEL)
-            message_id = data.get(SetupChannelKeys.MESSAGE)
             guild = self.get_guild(guild_id)
             if not guild:
                 logging.warning(
-                    "Guild %s not found. Removing from setup_channels.", guild_id
+                    "Guild %s unavailable; retaining setup settings.", guild_id
                 )
-                remove_setup_channel(guild_id, self.setup_channels)
                 continue
-
-            channel = guild.get_channel(channel_id)
-            if not channel:
+            role_id = data.get(SetupChannelKeys.DJ_ROLE)
+            if role_id:
+                role = guild.get_role(role_id)
+                if role:
+                    self.dj_roles[guild_id] = role
+            channel_id = data.get(SetupChannelKeys.CHANNEL)
+            message_id = data.get(SetupChannelKeys.MESSAGE)
+            channel = guild.get_channel(channel_id) if channel_id else None
+            if not channel or not message_id:
                 logging.warning(
-                    "Channel %s not found in guild %s. Removing from setup_channels.",
-                    channel_id,
+                    "Setup channel/message unavailable for %s; settings retained.",
                     guild_id,
                 )
-                remove_setup_channel(guild_id, self.setup_channels)
                 continue
-
+            view = PlayerControlView(self, self.get_player(guild_id))
+            self.add_view(view, message_id=message_id)
             try:
-                msg = await channel.fetch_message(message_id)
-                self.setup_message_cache[guild_id] = msg
-                logging.info("Cached setup message for guild %s.", guild_id)
-            except Exception as e:
-                logging.warning(
-                    "Error fetching setup message for guild %s: %s. Removing from setup_channels.",
-                    guild_id,
-                    e,
+                self.setup_message_cache[guild_id] = await channel.fetch_message(
+                    message_id
                 )
-                remove_setup_channel(guild_id, self.setup_channels)
-                continue
-
-            if SetupChannelKeys.DJ_ROLE in data:
-                role_id = data.get(SetupChannelKeys.DJ_ROLE)
-                dj_role = guild.get_role(role_id)
-                if dj_role:
-                    self.dj_roles[guild_id] = dj_role
-                else:
-                    logging.warning(
-                        "DJ role with ID %s not found in guild %s. Removing from setup_channels.",
-                        role_id,
-                        guild_id,
+            except discord.NotFound:
+                try:
+                    message = await channel.send(
+                        embed=self.create_default_embed(guild), view=view
                     )
-                    del data[SetupChannelKeys.DJ_ROLE]
-                    asyncio.create_task(save_setup_channels_async(self.setup_channels))
-            if delay:
-                await asyncio.sleep(delay)
+                    self.setup_message_cache[guild_id] = message
+                    data[SetupChannelKeys.MESSAGE] = message.id
+                    await save_setup_channels_async(self.setup_channels)
+                except discord.HTTPException:
+                    logging.exception(
+                        "Could not recreate setup message for %s", guild_id
+                    )
+            except discord.HTTPException:
+                logging.exception(
+                    "Could not fetch setup message for %s; settings retained", guild_id
+                )
 
     async def create_setup_channel(self, guild: discord.Guild) -> str:
         """
@@ -535,14 +524,6 @@ class Bot(commands.Bot):
 
     async def handle_setup_play(self, message: discord.Message) -> str:
         asyncio.create_task(self._delayed_delete(message, delay=0.2))
-        # Mirror the DJ role check from the slash command
-        setup_data = self.setup_channels.get(message.guild.id, {})
-        dj_role_id = setup_data.get(SetupChannelKeys.DJ_ROLE)
-        if dj_role_id:
-            dj_role = message.guild.get_role(dj_role_id)
-            if dj_role and dj_role not in message.author.roles:
-                return Error("🚫 You need the DJ role to request songs.")
-
         return await self.handle_play_action(
             message,
             message.guild,
@@ -551,14 +532,8 @@ class Bot(commands.Bot):
             message.content,
         )
 
-    async def _release_lock_after(self, lock: asyncio.Lock, delay: float):
-        await asyncio.sleep(delay)
-        if lock.locked():
-            lock.release()
-            logging.debug("Lock released after %s seconds.", delay)
-
-    @ensure_voice
     @debounce_action(delay=0.1)
+    @ensure_voice
     async def handle_play_action(
         self,
         interaction: discord.Interaction,
@@ -567,6 +542,14 @@ class Bot(commands.Bot):
         player: lavalink.DefaultPlayer | None,
         query: str,
     ) -> str:
+        query = query.strip().strip("<>")
+        if URL_RX.match(query):
+            error = await direct_url_error(query)
+            if error:
+                return Error(error)
+        else:
+            query = f"ytsearch:{query}"
+
         if not self.is_lavalink_connected():
             return Error(LAVALINK_NOT_CONNECTED_ERROR)
 
@@ -581,16 +564,21 @@ class Bot(commands.Bot):
             lavalink.DefaultPlayer, self.lavalink.player_manager.create(guild.id)
         )
 
-        query = query.strip("<>")
-        if not URL_RX.match(query):
-            query = f"ytsearch:{query}"
-
         try:
             results = await self.lavalink.get_tracks(query)
         except Exception as e:
             logging.error("Search failed: %s", e)
             return Error("🔍 Could not search for that track.")
 
+        if results and results.load_type == LoadType.ERROR:
+            logging.error(
+                "Track load failed: %s; cause: %s",
+                results.error.message,
+                results.error.cause,
+            )
+            return Error(
+                "Could not load that source. Check the Lavalink error log for details."
+            )
         if not results or not results.tracks:
             return Error("❌ No results found for that query.")
 
@@ -613,8 +601,8 @@ class Bot(commands.Bot):
 
         return Success(msg)
 
-    @ensure_voice
     @debounce_action(delay=1)
+    @ensure_voice
     async def handle_stop_action(
         self,
         interaction: discord.Interaction,
@@ -634,6 +622,8 @@ class Bot(commands.Bot):
             )
             player.queue.clear()
             await player.stop()
+            if self.dashboard:
+                self.dashboard.record_track_end(guild.id)
 
             await self.update_setup_embed(
                 guild,
@@ -652,8 +642,8 @@ class Bot(commands.Bot):
             logging.error("Stop error: %s", e)
             return Error("Failed to stop playback.")
 
-    @ensure_voice
     @debounce_action(delay=1)
+    @ensure_voice
     async def handle_skip_action(
         self,
         interaction: discord.Interaction,
@@ -685,8 +675,8 @@ class Bot(commands.Bot):
             logging.error("Skip error", exc_info=e)
             return Error("Failed to skip.")
 
-    @ensure_voice
     @debounce_action(delay=1)
+    @ensure_voice
     async def handle_toggle_action(
         self,
         interaction: discord.Interaction,
@@ -704,11 +694,14 @@ class Bot(commands.Bot):
             logging.error("Toggle error: %s", e)
             return Error("Failed to toggle pause/resume.")
 
+        if self.dashboard:
+            self.dashboard.record_pause(guild.id, new_pause_state)
         action = "Paused" if new_pause_state else "Resumed"
         self.set_latest_action(guild.id, f"{action} by {user.display_name}")
         await self.update_setup_embed(guild, player)
         return Success(f"{action} the current track.")
 
+    @debounce_action()
     @ensure_voice
     async def handle_disconnect_action(
         self,
@@ -719,8 +712,8 @@ class Bot(commands.Bot):
     ) -> str:
         if not guild.voice_client:
             return Error("🚫 I’m not connected to any voice channel.")
+        active_player = player or self.get_player(guild.id)
         try:
-            active_player = player or self.get_player(guild.id)
             if active_player:
                 active_player.queue.clear()
                 await active_player.stop()
@@ -747,6 +740,7 @@ class Bot(commands.Bot):
 
         return Success("Disconnected the player.")
 
+    @debounce_action()
     @ensure_voice
     async def handle_shuffle_action(
         self,
@@ -782,8 +776,8 @@ class Bot(commands.Bot):
         embed = view.current_embed()
         return embed, view
 
-    @ensure_voice
     @debounce_action(delay=0.5)
+    @ensure_voice
     async def handle_forward_action(
         self,
         interaction: discord.Interaction,
@@ -813,6 +807,7 @@ class Bot(commands.Bot):
             logging.error("Forward error: %s", e)
             return Error("Failed to forward playback.")
 
+    @debounce_action()
     @ensure_voice
     async def handle_nightcore_action(
         self,
@@ -843,6 +838,8 @@ class Bot(commands.Bot):
             logging.error("Filter update error: %s", e)
             return Error("Failed to update filters.")
 
+    @debounce_action()
+    @require_dj
     async def handle_stay_247_action(
         self,
         interaction: discord.Interaction,
@@ -858,12 +855,16 @@ class Bot(commands.Bot):
 
         asyncio.create_task(save_setup_channels_async(self.setup_channels))
 
-        await self.check_voice_channel_empty_and_leave(user)
+        await self._leave_empty_voice(user)
 
         status = "enabled" if new_value else "disabled"
         return Success(f"24/7 mode {status}!")
 
     async def check_voice_channel_empty_and_leave(self, member: discord.Member):
+        async with self._action_locks[member.guild.id]:
+            await self._leave_empty_voice(member)
+
+    async def _leave_empty_voice(self, member: discord.Member):
         vc = member.guild.voice_client
         if not vc or not vc.channel:
             return
@@ -1051,13 +1052,17 @@ class Bot(commands.Bot):
             logging.error("Failed to update buttons on setup message: %s", e)
 
     async def close(self) -> None:
-        """Gracefully shut down Lavalink, dashboard, and the bot."""
-        if self.dashboard:
-            await self.dashboard.stop()
-        if self.lavalink:
+        """Flush settings and close all services even if one cleanup fails."""
+        try:
+            await save_setup_channels_async(self.setup_channels)
+        except Exception:
+            logging.exception("Could not flush setup settings during shutdown")
+        try:
+            if self.dashboard:
+                await self.dashboard.stop()
+        finally:
             try:
-                await self.lavalink.close()
-                logging.info("Lavalink client closed.")
-            except Exception as e:
-                logging.warning("Error closing Lavalink: %s", e)
-        await super().close()
+                if self.lavalink:
+                    await self.lavalink.close()
+            finally:
+                await super().close()

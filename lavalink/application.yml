@@ -8,7 +8,7 @@ plugins:
     enabled: true
     remoteCipher:
       url: "http://ejs-api:8001" # The base URL of your remote cipher server. For local use "http://localhost:8001" or "http://ejs-api:8001" in docker-compose setup.
-      password: "your_secret_password" # The password to authenticate with your remote cipher server.
+      password: "${CIPHER_API_TOKEN}" # The password to authenticate with your remote cipher server.
     oauth:
       # setting "enabled: true" is the bare minimum to get OAuth working.
       enabled: false # IF YOU RUN YOUR LAVALINK CHECK YOUR CONSOLE AND CLICK THE GOOGLE.COM/DEVICES LINK AND THERE IS A CODE THAT YOU NEED TO PUT IN TO THE GOOGLE AND USE A BURNER ACCOUNT OR ALT ACCOUNT THERE IS A POSSIBLE CHANCE YOU CAN GET BANNED FROM GOOGLE OR YOUTUBE SO JUST USE A BURNER ACCOUNT IN CASE.
@@ -219,7 +219,7 @@ lavalink:
       snapshot: true
   pluginsDir: "./plugins"
   server:
-    password: "youshallnotpass"
+    password: "${LAVALINK_SERVER_PASSWORD}"
     sources:
       youtube: false # disable youtube on lavalink to use youtube-source
       bandcamp: true

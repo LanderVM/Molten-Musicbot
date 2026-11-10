@@ -1,3 +1,4 @@
+import os
 import re
 import signal
 import subprocess
@@ -5,6 +6,9 @@ import sys
 from pathlib import Path
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # This script is mainly used for development purposes to easily setup and run Lavalink.
 
@@ -53,9 +57,19 @@ def run_lavalink(jar_path):
         raise FileNotFoundError(f"{jar_path} not found")
     print("🚀 Starting Lavalink...")
 
+    password = os.getenv("LOCAL_LAVALINK_PASSWORD") or os.getenv("LAVALINK_PASSWORD")
+    cipher_token = os.getenv("CIPHER_API_TOKEN")
+    if not password or not cipher_token:
+        raise RuntimeError(
+            "Configure LAVALINK_PASSWORD and CIPHER_API_TOKEN in .env first"
+        )
+    child_env = dict(
+        os.environ, LAVALINK_SERVER_PASSWORD=password, CIPHER_API_TOKEN=cipher_token
+    )
     process = subprocess.Popen(
         ["java", "-jar", str(jar_path.resolve())],
         cwd=jar_path.parent,
+        env=child_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )

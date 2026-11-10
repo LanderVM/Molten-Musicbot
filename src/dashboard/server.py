@@ -30,6 +30,7 @@ _DASHBOARD_HTML = (PACKAGE_DIR / "templates" / "dashboard.html").read_text(
     encoding="utf-8"
 )
 STREAM_INTERVAL = 2.0
+MAX_AUTH_ENTRIES = 1024
 
 
 class Dashboard:
@@ -51,7 +52,7 @@ class Dashboard:
         self,
         bot: "Bot",
         secret: str,
-        host: str = "0.0.0.0",
+        host: str = "127.0.0.1",
         port: int = 8080,
     ) -> None:
         self.bot = bot
@@ -63,6 +64,7 @@ class Dashboard:
         self._login_csrf: dict[str, float] = {}
         self._login_failures: dict[str, list[float]] = {}
         self._save_task: asyncio.Task | None = None
+        self._save_dirty = False
         self._stream_task: asyncio.Task | None = None
         self._subscribers: set[asyncio.Queue] = set()
         self._stream_wakeup = asyncio.Event()
@@ -70,7 +72,8 @@ class Dashboard:
         self._track_start: dict[int, float] = {}
         self._track_elapsed: dict[int, float] = {}
         self._runner: web.AppRunner | None = None
-        self.app = web.Application()
+        self._stopping = False
+        self.app = web.Application(client_max_size=16 * 1024)
         self._setup_routes()
 
     # ── Routes ────────────────────────────────────────────────────────────────
@@ -121,22 +124,33 @@ class Dashboard:
         return bool(
             session
             and supplied
-            and hmac.compare_digest(session[1], supplied)
+            and hmac.compare_digest(session[1].encode(), supplied.encode())
             and self._same_origin(req)
         )
 
     def _queue_save(self) -> None:
+        if self._stopping:
+            return
+        self._save_dirty = True
         if not self._save_task or self._save_task.done():
             self._save_task = asyncio.create_task(self._save_debounced())
 
     async def _save_debounced(self) -> None:
-        await asyncio.sleep(1.0)
-        # Snapshot state before transferring the JSON write to a worker thread.
-        snapshot = json.loads(json.dumps(self.stats, default=str))
-        try:
-            await asyncio.to_thread(_save_stats_sync, snapshot)
-        except Exception:
-            logger.exception("Dashboard stats save failed")
+        while self._save_dirty:
+            self._save_dirty = False
+            await asyncio.sleep(1.0)
+            snapshot = json.loads(json.dumps(self.stats, default=str))
+            try:
+                worker = asyncio.create_task(
+                    asyncio.to_thread(_save_stats_sync, snapshot)
+                )
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    await worker
+                    raise
+            except Exception:
+                logger.exception("Dashboard stats save failed")
 
     async def _static_file(self, name: str, content_type: str) -> web.Response:
         contents = (STATIC_DIR / name).read_text(encoding="utf-8")
@@ -157,6 +171,21 @@ class Dashboard:
 
     # ── Page handlers ─────────────────────────────────────────────────────────
 
+    def _prune_auth(self, now: float) -> None:
+        self._login_csrf = {k: v for k, v in self._login_csrf.items() if v > now}
+        self._sessions = {k: v for k, v in self._sessions.items() if v[0] > now}
+        self._login_failures = {
+            k: recent
+            for k, values in self._login_failures.items()
+            if (recent := [t for t in values if now - t < LOGIN_WINDOW])
+        }
+
+    @staticmethod
+    async def _form(req: web.Request):
+        if req.content_type != "application/x-www-form-urlencoded":
+            raise web.HTTPUnsupportedMediaType(text="Expected a URL-encoded form")
+        return await req.post()
+
     async def _handle_dashboard(self, req: web.Request) -> web.Response:
         session = self._session(req)
         if not session:
@@ -171,7 +200,9 @@ class Dashboard:
         if self._authed(req):
             raise web.HTTPFound("/")
         now = time.time()
-        self._login_csrf = {k: v for k, v in self._login_csrf.items() if v > now}
+        self._prune_auth(now)
+        if len(self._login_csrf) >= MAX_AUTH_ENTRIES:
+            raise web.HTTPServiceUnavailable(text="Too many login forms; try later")
         csrf = secrets.token_urlsafe(24)
         self._login_csrf[csrf] = now + 600
         # A fixed message is used; URL parameters never reach HTML directly.
@@ -193,7 +224,13 @@ class Dashboard:
         if not self._same_origin(req):
             raise web.HTTPForbidden(text="Invalid origin")
         now = time.time()
+        self._prune_auth(now)
         remote = req.remote or "unknown"
+        if (
+            remote not in self._login_failures
+            and len(self._login_failures) >= MAX_AUTH_ENTRIES
+        ):
+            raise web.HTTPServiceUnavailable(text="Too many login attempts; try later")
         attempts = [
             t for t in self._login_failures.get(remote, []) if now - t < LOGIN_WINDOW
         ]
@@ -202,13 +239,15 @@ class Dashboard:
             raise web.HTTPTooManyRequests(
                 text="Too many login attempts. Try again later."
             )
-        data = await req.post()
+        data = await self._form(req)
         csrf = str(data.get("csrf", ""))
         expiry = self._login_csrf.pop(csrf, 0)
         if expiry < now:
             raise web.HTTPForbidden(text="Login form expired; reload the page")
         password = str(data.get("password", ""))
         if hmac.compare_digest(password.encode(), self.secret.encode()):
+            if len(self._sessions) >= MAX_AUTH_ENTRIES:
+                raise web.HTTPServiceUnavailable(text="Too many sessions; try later")
             self._login_failures.pop(remote, None)
             token, csrf_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             self._sessions[token] = (now + SESSION_SECONDS, csrf_token)
@@ -225,7 +264,7 @@ class Dashboard:
                 max_age=SESSION_SECONDS,
                 path="/",
             )
-            return resp
+            raise resp
         attempts.append(now)
         self._login_failures[remote] = attempts
         raise web.HTTPFound("/login?error=1")
@@ -234,16 +273,16 @@ class Dashboard:
         if not self._same_origin(req):
             raise web.HTTPForbidden()
         session = self._session(req)
-        data = await req.post()
+        data = await self._form(req)
         if not session or not hmac.compare_digest(
-            str(data.get("csrf", "")), session[1]
+            str(data.get("csrf", "")).encode(), session[1].encode()
         ):
             raise web.HTTPForbidden()
         token = req.cookies.get("dashboard_token", "")
         self._sessions.pop(token, None)
         resp = web.HTTPFound("/login")
         resp.del_cookie("dashboard_token", path="/")
-        return resp
+        raise resp
 
     # ── API handlers ──────────────────────────────────────────────────────────
 
@@ -307,8 +346,12 @@ class Dashboard:
             # Persistent stats + live session offset
             total_ms = g_stats.get("total_playtime_ms", 0)
             session_extra = 0
-            if guild.id in self._track_start:
-                self._sync_pause(guild.id, is_paused)
+            if guild.id in self._track_start or guild.id in self._track_elapsed:
+                if now_playing:
+                    self._sync_pause(guild.id, is_paused)
+                else:
+                    self.record_track_end(guild.id)
+                    total_ms = g_stats.get("total_playtime_ms", 0)
                 session_extra = int(self._track_elapsed.get(guild.id, 0) * 1000)
                 if guild.id in self._track_start:
                     session_extra += int(
@@ -495,18 +538,23 @@ class Dashboard:
             return web.json_response({"error": "Guild not found"}, status=404)
 
         try:
-            player = self.bot.get_player(guild_id)
-            if player:
-                self.record_track_end(guild_id)
-                player.queue.clear()
-                await player.stop()
-            if guild.voice_client:
-                await guild.voice_client.disconnect(force=True)
-            logger.info("Dashboard: left guild %s (%s)", guild.name, guild_id)
-            return web.json_response({"success": True, "message": f"Left {guild.name}"})
+            async with self.bot._action_locks[guild_id]:
+                player = self.bot.get_player(guild_id)
+                if player:
+                    self.record_track_end(guild_id)
+                    player.queue.clear()
+                    await player.stop()
+                if guild.voice_client:
+                    await guild.voice_client.disconnect(force=True)
+                logger.info("Dashboard: left guild %s (%s)", guild.name, guild_id)
+                return web.json_response(
+                    {"success": True, "message": f"Left {guild.name}"}
+                )
         except Exception as e:
             logger.error("Dashboard leave failed for %s: %s", guild_id, e)
-            return web.json_response({"error": str(e)}, status=500)
+            return web.json_response(
+                {"error": "Could not disconnect from voice"}, status=500
+            )
 
     # ── Stats tracking ────────────────────────────────────────────────────────
 
@@ -520,6 +568,17 @@ class Dashboard:
             self._track_start.pop(guild_id, None)
         elif not paused and started is None and guild_id in self._track_elapsed:
             self._track_start[guild_id] = time.monotonic()
+
+    def record_pause(self, guild_id: int, paused: bool) -> None:
+        self._sync_pause(guild_id, paused)
+        self.notify_change()
+
+    def record_track_resume(self, guild_id: int, paused: bool) -> None:
+        """Resume accounting for a retained node session without counting a new track."""
+        if guild_id not in self._track_elapsed:
+            self._track_elapsed[guild_id] = 0.0
+        self._sync_pause(guild_id, paused)
+        self.notify_change()
 
     def record_track_start(self, guild_id: int, track_title: str) -> None:
         self.record_track_end(guild_id)
@@ -559,6 +618,7 @@ class Dashboard:
         logger.info("🌐 Dashboard running → http://%s:%d", self.host, self.port)
 
     async def stop(self) -> None:
+        self._stopping = True
         if self._stream_task:
             self._stream_task.cancel()
             try:
@@ -571,9 +631,15 @@ class Dashboard:
                 await self._save_task
             except asyncio.CancelledError:
                 pass
-        await asyncio.to_thread(
-            _save_stats_sync, json.loads(json.dumps(self.stats, default=str))
-        )
-        if self._runner:
-            await self._runner.cleanup()
-            logger.info("Dashboard stopped.")
+        for guild_id in set(self._track_start) | set(self._track_elapsed):
+            self.record_track_end(guild_id)
+        self._sessions.clear()
+        self.notify_change()
+        try:
+            await asyncio.to_thread(
+                _save_stats_sync, json.loads(json.dumps(self.stats, default=str))
+            )
+        finally:
+            if self._runner:
+                await self._runner.cleanup()
+                logger.info("Dashboard stopped.")
